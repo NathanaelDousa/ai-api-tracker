@@ -26,9 +26,7 @@ interface CostReportResponse {
   next_page: string | null;
 }
 
-export async function fetchClaudeUsage(): Promise<UsageData> {
-  const raw = await streamDeck.settings.getGlobalSettings();
-  const gs  = raw as unknown as GlobalSettings;
+export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = gs.claudeApiKey;
   const budget = Math.max(0, Number(gs.claudeMonthlyBudget ?? gs.monthlyBudget) || 0);
 
@@ -85,6 +83,7 @@ export async function fetchClaudeUsage(): Promise<UsageData> {
   return {
     dailyTokens:     0,
     dailyCost:       round3(dailyCost),
+    monthlyCost:     round2(monthlyCost),
     budgetTotal:     budget,
     budgetRemaining: round2(budget - monthlyCost),
     lastUpdated:     Date.now(),

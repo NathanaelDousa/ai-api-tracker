@@ -46,10 +46,7 @@ let tokenCache: { value: string; expiresAt: number } | null = null;
 // Public API
 // --------------------------------------------------------------------------
 
-export async function fetchGeminiUsage(): Promise<UsageData> {
-  const raw = await streamDeck.settings.getGlobalSettings();
-  const gs  = raw as unknown as GlobalSettings;
-
+export async function fetchGeminiUsage(gs: GlobalSettings): Promise<UsageData> {
   const saPath    = gs.geminiServiceAccountPath?.trim();
   const projectId = gs.geminiProjectId?.trim();
 
@@ -140,7 +137,25 @@ export async function fetchGeminiUsage(): Promise<UsageData> {
     }
   }
 
-  streamDeck.logger.info(`[Gemini] requests today=${totalRequests}`);
+  const costPerReq = Math.max(0, Number(gs.geminiCostPerRequest) || 0);
+  const estimatedCost = totalRequests * costPerReq;
+
+  streamDeck.logger.info(
+    `[Gemini] requests today=${totalRequests}` +
+    (costPerReq > 0 ? ` estimatedCost=$${estimatedCost.toFixed(4)}` : ""),
+  );
+
+  if (costPerReq > 0) {
+    // User configured a cost rate — show estimated spend instead of raw counts.
+    return {
+      dailyTokens:     totalRequests,
+      dailyCost:       estimatedCost,
+      budgetTotal:     0,
+      budgetRemaining: 0,
+      lastUpdated:     Date.now(),
+      unit:            "usd",
+    };
+  }
 
   return {
     dailyTokens:     totalRequests,

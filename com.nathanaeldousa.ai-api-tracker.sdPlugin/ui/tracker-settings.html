@@ -168,12 +168,17 @@
       placeholder="my-gcp-project-id"></sdpi-textfield>
     <div class="note">Optional if already embedded in the SA JSON.</div>
   </sdpi-item>
+  <sdpi-item label="Cost/request ($)">
+    <sdpi-textfield setting="geminiCostPerRequest" global
+      placeholder="e.g. 0.000002" type="number" min="0" step="any"></sdpi-textfield>
+    <div class="note">Optional. Your average cost per API call. When set, the tile shows estimated spend instead of request count. Divide a past bill total by the request count to estimate this value.</div>
+  </sdpi-item>
   <div class="callout">
     GCP Console → IAM → Service Accounts → Create →
     grant <strong>Monitoring Viewer</strong> → Keys → Add Key → JSON.
     Enable the <strong>Cloud Monitoring API</strong> on your project.
-    Note: shows <strong>request count</strong>, not cost — Google doesn't
-    expose per-key spend via Cloud Monitoring.
+    By default shows <strong>request count</strong> — set Cost/request above
+    to convert to an estimated spend.
   </div>
 
   <!-- DeepSeek ───────────────────────────────────────────────── -->

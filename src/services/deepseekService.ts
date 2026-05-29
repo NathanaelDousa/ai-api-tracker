@@ -49,9 +49,7 @@ interface BalanceResponse {
   balance_infos: BalanceInfo[];
 }
 
-export async function fetchDeepSeekUsage(): Promise<UsageData> {
-  const raw = await streamDeck.settings.getGlobalSettings();
-  const gs  = raw as unknown as GlobalSettings;
+export async function fetchDeepSeekUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = gs.deepseekApiKey;
   const budget = Math.max(0, Number(gs.deepseekMonthlyBudget ?? gs.monthlyBudget) || 0);
 

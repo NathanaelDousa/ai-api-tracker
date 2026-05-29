@@ -12,6 +12,9 @@ export interface UsageData {
   dailyTokens: number;
   /** Estimated USD cost for today's usage */
   dailyCost: number;
+  /** Month-to-date spend in USD. Undefined for balance-based providers (DeepSeek)
+   *  or when the provider doesn't expose monthly data (Gemini). */
+  monthlyCost?: number;
   /** User-configured monthly budget (USD) */
   budgetTotal: number;
   /** Budget minus estimated spend (best-effort, may be zero) */
@@ -42,7 +45,10 @@ export type FetchError =
 // How every provider's fetcher function looks
 // --------------------------------------------------------------------------
 
-export type ProviderFetcher = () => Promise<UsageData>;
+/** Every provider fetcher receives the current global settings so it never
+ *  needs to call getGlobalSettings() internally — avoiding the event loop
+ *  that plagued the original architecture. */
+export type ProviderFetcher = (settings: GlobalSettings) => Promise<UsageData>;
 
 // --------------------------------------------------------------------------
 // Provider metadata used by the registry
@@ -75,6 +81,9 @@ export type GlobalSettings = Record<string, unknown> & {
   geminiApiKey?: string;
   geminiServiceAccountPath?: string;
   geminiProjectId?: string;
+  /** Average cost per Gemini API call in USD. Used to estimate spend from
+   *  request counts when no direct billing endpoint is available. */
+  geminiCostPerRequest?: number;
   deepseekApiKey?: string;
   /** Shared fallback budget used when a provider-specific budget is not set */
   monthlyBudget?: number;

@@ -26,9 +26,16 @@ interface TileState {
   keyDownTime: number;
   refreshTimer: ReturnType<typeof setInterval> | null;
   displayTimer: ReturnType<typeof setInterval> | null;
+  /** One-shot timer that retries after a bad-api-key / coming-soon error so
+   *  temporary API hiccups auto-recover without user intervention. */
+  retryTimer:   ReturnType<typeof setTimeout>  | null;
   currentProviderId: string;
   lastSuccessData: { data: UsageData; providerName: string } | null;
   fetchInProgress: boolean;
+  /** True when the last fetch ended in a permanent-ish error (bad key, no key).
+   *  Used by onDidReceiveGlobalSettings to trigger an immediate retry as soon
+   *  as the user saves new settings. */
+  lastFetchWasError: boolean;
   /**
    * Set to true while cycleProvider() is running so onDidReceiveSettings
    * (which fires as a side-effect of action.setSettings inside cycleProvider)
@@ -67,11 +74,20 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     streamDeck.settings.onDidReceiveGlobalSettings((ev) => {
       this.cachedGlobalSettings = ev.settings as unknown as GlobalSettings;
       LOG("global settings cache updated");
-      // Restart auto-refresh for every visible tile so the new interval takes
-      // effect immediately without waiting for the next onDidReceiveSettings.
       for (const [, tile] of this.tiles) {
         if (tile.action && !tile.cycling) {
+          // Always restart the interval timer so a changed refresh rate takes
+          // effect immediately.
+          this.stopRetryTimer(tile);
           this.startAutoRefresh(tile, tile.action);
+          this.startDisplayRefresh(tile, tile.action);
+          // If the tile was stuck in an error state, retry right away — this
+          // handles the "user just fixed their API key" case without needing
+          // a manual tap. Safe because fetchers no longer call getGlobalSettings()
+          // internally, so there is no risk of re-triggering this listener.
+          if (tile.lastFetchWasError) {
+            this.refreshTile(tile, tile.action).catch(() => {});
+          }
         }
       }
     });
@@ -85,9 +101,11 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         keyDownTime:       0,
         refreshTimer:      null,
         displayTimer:      null,
+        retryTimer:        null,
         currentProviderId: DEFAULT_PROVIDER_ID,
         lastSuccessData:   null,
         fetchInProgress:   false,
+        lastFetchWasError: false,
         cycling:           false,
       };
       this.tiles.set(id, s);
@@ -140,6 +158,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       if (tile) {
         this.stopAutoRefresh(tile);
         this.stopDisplayRefresh(tile);
+        this.stopRetryTimer(tile);
         tile.action = null;
         this.tiles.delete(ev.action.id);
       }
@@ -204,6 +223,9 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         return;
       }
 
+      // Any settings change clears the retry timer — we'll start fresh below.
+      this.stopRetryTimer(tile);
+
       // Use ev.payload.settings directly — calling action.getSettings() here
       // would cause Stream Deck to fire onDidReceiveSettings again, creating
       // an infinite loop.
@@ -213,12 +235,10 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       if (providerChanged) {
         tile.currentProviderId = newProvider;
         tile.lastSuccessData   = null;
+        tile.lastFetchWasError = false;
         await this.showProviderReady(tile, action);
       }
 
-      // startAutoRefresh is now synchronous and uses the cached global
-      // settings — it MUST NOT call getGlobalSettings() here because that
-      // would re-trigger onDidReceiveSettings and create an infinite loop.
       this.stopAutoRefresh(tile);
       this.startAutoRefresh(tile, action);
       this.startDisplayRefresh(tile, action);
@@ -242,11 +262,13 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
   private async cycleProvider(tile: TileState, action: WillAppearEvent["action"]): Promise<void> {
     this.stopAutoRefresh(tile);
     this.stopDisplayRefresh(tile);
+    this.stopRetryTimer(tile);
 
     const idx  = ALL_PROVIDERS.findIndex(p => p.id === tile.currentProviderId);
     const next = ALL_PROVIDERS[(idx + 1) % ALL_PROVIDERS.length];
     tile.currentProviderId = next.id;
     tile.lastSuccessData   = null;
+    tile.lastFetchWasError = false;
 
     // Guard: tell onDidReceiveSettings to back off while we're in control.
     tile.cycling = true;
@@ -286,17 +308,36 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
 
     tile.fetchInProgress = true;
     try {
-      const data = await provider.fetcher();
-      await action.setTitle(this.formatSuccess(provider.name, data));
+      const data = await provider.fetcher(this.cachedGlobalSettings);
+      const wasInError = tile.lastFetchWasError;
+      tile.lastFetchWasError = false;
+      this.stopRetryTimer(tile);
       tile.lastSuccessData = { data, providerName: provider.name };
+      await action.setTitle(this.formatSuccess(provider.name, data));
+      if (wasInError) {
+        // Recovered from an error state — restart the normal refresh cycle.
+        this.startAutoRefresh(tile, action);
+        this.startDisplayRefresh(tile, action);
+      }
       LOG("refreshTile END (success)");
     } catch (err: unknown) {
       LOG(`refreshTile FETCH ERROR: ${String(err)}`);
+      tile.lastFetchWasError = true;
       const fe = await this.handleFetchError(action, provider.name, err);
-      if (fe.kind === "bad-api-key" || fe.kind === "no-api-key" || fe.kind === "coming-soon") {
+      if (fe.kind === "bad-api-key" || fe.kind === "coming-soon") {
+        // Likely a configuration issue, but could be a temporary API glitch.
+        // Stop normal refresh and schedule a retry in 10 min so it auto-recovers
+        // without user intervention if the key was just temporarily rejected.
         this.stopAutoRefresh(tile);
         this.stopDisplayRefresh(tile);
-        LOG(`refreshTile: stopped auto-refresh (permanent error: ${fe.kind})`);
+        this.startRetryTimer(tile, action);
+        LOG(`refreshTile: retry in 10 min (${fe.kind})`);
+      } else if (fe.kind === "no-api-key") {
+        // No key configured — retrying is pointless. Will recover as soon as
+        // the user saves a key (onDidReceiveGlobalSettings fires and refreshes).
+        this.stopAutoRefresh(tile);
+        this.stopDisplayRefresh(tile);
+        LOG("refreshTile: paused until key is added");
       }
     } finally {
       tile.fetchInProgress = false;
@@ -398,8 +439,14 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     }
 
     if (d.budgetTotal === 0) {
-      if (d.dailyCost === 0 && d.dailyTokens === 0) return `${short}\n$0 today\n${age}`;
-      return `${short}\n$${d.dailyCost.toFixed(2)} today\n${age}`;
+      const todayStr = `$${d.dailyCost.toFixed(2)} today`;
+      // Show month-to-date when we have it (OpenAI, Claude) so the user
+      // gets both daily and monthly spend without having to set a budget.
+      if (d.monthlyCost != null) {
+        return `${short}\n${todayStr}\n$${d.monthlyCost.toFixed(2)} /mo`;
+      }
+      if (d.dailyCost === 0) return `${short}\n$0 today\n${age}`;
+      return `${short}\n${todayStr}\n${age}`;
     }
 
     if (d.budgetRemaining <= 0) {
@@ -487,6 +534,29 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     if (tile.displayTimer !== null) {
       clearInterval(tile.displayTimer);
       tile.displayTimer = null;
+    }
+  }
+
+  // =========================================================================
+  // RETRY TIMER (bad-key / coming-soon errors)
+  // =========================================================================
+
+  /** Schedule a single retry attempt after 10 minutes.
+   *  If the fetch succeeds, normal auto-refresh restarts automatically.
+   *  If it fails again, another retry is scheduled. */
+  private startRetryTimer(tile: TileState, action: WillAppearEvent["action"]): void {
+    this.stopRetryTimer(tile);
+    tile.retryTimer = setTimeout(() => {
+      tile.retryTimer = null;
+      LOG("retryTimer fired — retrying fetch");
+      this.refreshTile(tile, action).catch(() => {});
+    }, 10 * 60_000);
+  }
+
+  private stopRetryTimer(tile: TileState): void {
+    if (tile.retryTimer !== null) {
+      clearTimeout(tile.retryTimer);
+      tile.retryTimer = null;
     }
   }
 }

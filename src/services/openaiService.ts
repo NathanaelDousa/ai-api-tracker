@@ -28,9 +28,7 @@ interface OrgCostsResponse {
   next_page: string | null;
 }
 
-export async function fetchOpenAIUsage(): Promise<UsageData> {
-  const raw = await streamDeck.settings.getGlobalSettings();
-  const gs  = raw as unknown as GlobalSettings;
+export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = gs.openaiApiKey;
   const budget = Math.max(0, Number(gs.openaiMonthlyBudget ?? gs.monthlyBudget) || 0);
 
@@ -85,6 +83,7 @@ export async function fetchOpenAIUsage(): Promise<UsageData> {
   return {
     dailyTokens:     0,
     dailyCost:       round3(dailyCost),
+    monthlyCost:     round2(monthlyCost),
     budgetTotal:     budget,
     budgetRemaining: round2(budget - monthlyCost),
     lastUpdated:     Date.now(),
