@@ -14,10 +14,11 @@ export default {
   output: {
     file: "com.nathanaeldousa.ai-api-tracker.sdPlugin/bin/plugin.cjs",
     format: "cjs",
+    sourcemap: false,
   },
   plugins: [
     nodeResolve({ browser: false, preferBuiltins: true }),
     commonjs({ requireReturnsDefault: "auto" }),
-    typescript(),
+    typescript({ sourceMap: false, inlineSources: false }),
   ],
 };
