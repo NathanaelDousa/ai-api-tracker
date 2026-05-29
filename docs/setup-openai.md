@@ -50,3 +50,11 @@ If the tile flashes ⚠:
 | Line 3 | Budget remaining or monthly total, e.g. `$12.40 left` |
 
 When no budget is set, line 3 shows your total month-to-date spend instead.
+
+---
+
+## Why the balance may differ slightly from the platform
+
+The tile calculates remaining balance as **your configured budget minus the spend reported by the Costs API**. OpenAI's Costs API processes usage in batches and typically lags **a few hours** behind real-time billing — so a recent API call may already be deducted from your platform credit balance but not yet reflected in the tile.
+
+This is a limitation of OpenAI's API: unlike DeepSeek (which exposes a live `/user/balance` endpoint), OpenAI has no public endpoint that returns your credit balance directly. Small discrepancies of a few cents between the tile and the platform dashboard are expected and will close as the Costs API catches up.
