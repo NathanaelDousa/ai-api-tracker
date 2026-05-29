@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>AI API Tracker</title>
+  <script src="sdpi-components.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+
+    /* ── Section headers ─────────────────────────────────────── */
+    .heading {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #b8b8b8;
+      padding: 16px 8px 5px;
+    }
+    .heading::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #2e2e2e;
+    }
+
+    /* ── Provider sub-labels ─────────────────────────────────── */
+    .provider-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #c0c0c0;
+      padding: 10px 8px 2px;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* ── Callout boxes ───────────────────────────────────────── */
+    .callout {
+      font-size: 10.5px;
+      line-height: 1.55;
+      margin: 2px 8px 8px;
+      padding: 7px 10px;
+      background: rgba(212, 160, 23, 0.06);
+      border-left: 2px solid #c8900c;
+      border-radius: 0 4px 4px 0;
+      color: #b88010;
+    }
+    .callout strong { color: #d4a017; }
+
+    /* ── Helper notes under fields ───────────────────────────── */
+    .note {
+      font-size: 10px;
+      color: #5e5e5e;
+      margin: 2px 0 0;
+      line-height: 1.4;
+    }
+
+    /* ── Dividers ────────────────────────────────────────────── */
+    hr {
+      border: none;
+      border-top: 1px solid #252525;
+      margin: 8px 0 2px;
+    }
+
+    /* ── Quick-reference table ───────────────────────────────── */
+    .ref-table {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 5px 12px;
+      padding: 4px 8px 10px;
+      font-size: 10.5px;
+    }
+    .ref-table .k { color: #808080; white-space: nowrap; }
+    .ref-table .v { color: #b0b0b0; }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    .footer {
+      font-size: 10px;
+      color: #404040;
+      text-align: center;
+      padding: 8px 8px 6px;
+      border-top: 1px solid #222;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!--  Provider (stored per-tile in action settings)              -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <sdpi-item label="Provider">
+    <sdpi-select setting="provider" id="provider-select">
+      <option value="openai" selected>OpenAI</option>
+      <option value="claude">Claude (Anthropic)</option>
+      <option value="gemini">Gemini (Google)</option>
+      <option value="deepseek">DeepSeek</option>
+    </sdpi-select>
+    <div class="note">Each tile tracks one provider. Hold the key 0.8 s to cycle.</div>
+  </sdpi-item>
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!--  API Keys & Budgets (global — shared across all tiles)      -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <div class="heading">🔑 API Keys &amp; Budgets</div>
+
+  <!-- OpenAI ─────────────────────────────────────────────────── -->
+  <div class="provider-label">
+    <span class="dot" style="background:#10a37f"></span>
+    OpenAI
+  </div>
+  <sdpi-item label="API Key">
+    <sdpi-password setting="openaiApiKey" global placeholder="sk-..."></sdpi-password>
+    <div class="note">Stored locally — only sent to api.openai.com.</div>
+  </sdpi-item>
+  <sdpi-item label="Budget ($)">
+    <sdpi-textfield setting="openaiMonthlyBudget" global
+      placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
+    <div class="note">Monthly budget for remaining-balance display.</div>
+  </sdpi-item>
+  <div class="callout">
+    Requires an <strong>Admin key</strong> — create one at
+    <strong>platform.openai.com/organization/api-keys</strong>
+    (Role → Admin). A regular project key (sk-proj-…) will return a 403 error.
+  </div>
+
+  <!-- Claude ─────────────────────────────────────────────────── -->
+  <div class="provider-label">
+    <span class="dot" style="background:#d97706"></span>
+    Claude (Anthropic)
+  </div>
+  <sdpi-item label="API Key">
+    <sdpi-password setting="claudeApiKey" global placeholder="sk-ant-admin..."></sdpi-password>
+    <div class="note">Stored locally — only sent to api.anthropic.com.</div>
+  </sdpi-item>
+  <sdpi-item label="Budget ($)">
+    <sdpi-textfield setting="claudeMonthlyBudget" global
+      placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
+  </sdpi-item>
+  <div class="callout">
+    Requires an <strong>Admin key</strong> (sk-ant-admin…) —
+    <strong>console.anthropic.com → Settings → Admin keys</strong>.
+    Only available on enterprise/team plans. Standard accounts will see
+    "Admin key required" and auto-refresh stops.
+  </div>
+
+  <!-- Gemini ─────────────────────────────────────────────────── -->
+  <div class="provider-label">
+    <span class="dot" style="background:#4285f4"></span>
+    Gemini (Google)
+  </div>
+  <sdpi-item label="SA File Path">
+    <sdpi-textfield setting="geminiServiceAccountPath" global
+      placeholder="/Users/you/gemini-sa.json"></sdpi-textfield>
+    <div class="note">Full path to your GCP service account JSON key file.</div>
+  </sdpi-item>
+  <sdpi-item label="GCP Project">
+    <sdpi-textfield setting="geminiProjectId" global
+      placeholder="my-gcp-project-id"></sdpi-textfield>
+    <div class="note">Optional if already embedded in the SA JSON.</div>
+  </sdpi-item>
+  <div class="callout">
+    GCP Console → IAM → Service Accounts → Create →
+    grant <strong>Monitoring Viewer</strong> → Keys → Add Key → JSON.
+    Enable the <strong>Cloud Monitoring API</strong> on your project.
+    Note: shows <strong>request count</strong>, not cost — Google doesn't
+    expose per-key spend via Cloud Monitoring.
+  </div>
+
+  <!-- DeepSeek ───────────────────────────────────────────────── -->
+  <div class="provider-label">
+    <span class="dot" style="background:#6366f1"></span>
+    DeepSeek
+  </div>
+  <sdpi-item label="API Key">
+    <sdpi-password setting="deepseekApiKey" global placeholder="sk-..."></sdpi-password>
+    <div class="note">
+      Shows remaining credit balance. CNY is auto-converted to USD.
+    </div>
+  </sdpi-item>
+  <sdpi-item label="Budget ($)">
+    <sdpi-textfield setting="deepseekMonthlyBudget" global
+      placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
+    <div class="note">Optional — leave blank to use your credit balance as the total.</div>
+  </sdpi-item>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!--  Refresh                                                    -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <div class="heading">⚙ Settings</div>
+
+  <sdpi-item label="Auto-refresh">
+    <sdpi-select setting="refreshInterval" global>
+      <option value="0">Manual only</option>
+      <option value="1">Every 1 min</option>
+      <option value="2" selected>Every 2 min</option>
+      <option value="5">Every 5 min</option>
+      <option value="15">Every 15 min</option>
+    </sdpi-select>
+  </sdpi-item>
+
+  <hr />
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!--  Quick reference                                            -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <div class="heading">Quick Reference</div>
+
+  <div class="ref-table">
+    <span class="k">Tap</span>         <span class="v">Manual refresh</span>
+    <span class="k">Hold 0.8 s</span>  <span class="v">Cycle provider</span>
+    <span class="k">Auto</span>        <span class="v">Refreshes on interval above</span>
+    <span class="k">⚡ Warning</span>   <span class="v">≤ 25 % of budget remaining</span>
+    <span class="k">⚠ Critical</span>  <span class="v">≤ 10 % of budget remaining</span>
+    <span class="k">Over limit</span>  <span class="v">Budget exceeded — shows overage</span>
+  </div>
+
+  <div class="footer">Keys are stored locally and only ever sent to the official provider API.</div>
+
+</body>
+</html>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="32" fill="#1a1a2e"/>
+  <text x="128" y="100" text-anchor="middle" fill="#00d4ff" font-size="48" font-family="sans-serif" font-weight="bold">AI</text>
+  <text x="128" y="170" text-anchor="middle" fill="#ffffff" font-size="28" font-family="sans-serif">Tracker</text>
+</svg>

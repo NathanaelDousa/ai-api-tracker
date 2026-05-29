@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "UUID": "com.nathanaeldousa.ai-api-tracker",
+  "Name": "AI API Tracker",
+  "Version": "1.0.0.0",
+  "Author": "Nathanael Dousa",
+  "Description": "Monitor AI API usage and balances from OpenAI, Claude, Gemini, and DeepSeek directly on your Stream Deck.",
+  "URL": "https://github.com/nathanaeldousa/ai-api-tracker",
+  "Icon": "imgs/plugin-icon",
+  "Category": "AI API Tracker",
+  "CategoryIcon": "imgs/category-icon",
+  "CodePath": "bin/plugin.cjs",
+  "SDKVersion": 2,
+  "Software": {
+    "MinimumVersion": "6.6"
+  },
+  "Nodejs": {
+    "Version": "20"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "13"
+    },
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    }
+  ],
+  "Actions": [
+    {
+      "Name": "API Tracker",
+      "UUID": "com.nathanaeldousa.ai-api-tracker.tracker",
+      "Icon": "imgs/actions/tracker-icon",
+      "PropertyInspectorPath": "ui/tracker-settings.html",
+      "SupportedInMultiActions": false,
+      "UserTitleEnabled": false,
+      "Tooltip": "Displays remaining AI API balance or monthly usage for the selected provider.",
+      "States": [
+        {
+          "Image": "imgs/actions/tracker-key",
+          "FontSize": 11,
+          "ShowTitle": true,
+          "TitleAlignment": "middle"
+        }
+      ]
+    }
+  ]
+}
