@@ -320,7 +320,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     if (!provider.implemented) {
       await action.setTitle(`${short}\nComing soon`);
     } else {
-      await action.setTitle(`${short}\nReady\nTap refresh`);
+      await action.setTitle(`${short}\nChecking…`);
     }
   }
 
