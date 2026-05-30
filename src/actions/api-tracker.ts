@@ -270,25 +270,34 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     tile.lastSuccessData   = null;
     tile.lastFetchWasError = false;
 
-    // Guard: tell onDidReceiveSettings to back off while we're in control.
+    // Guard: tell onDidReceiveSettings to back off while we're in control,
+    // but ONLY until the setSettings() response has been received — not for
+    // the duration of the network fetch (which can take up to 30s for OpenAI).
+    // Holding cycling=true through refreshTile blocks dropdown changes made
+    // while the tile is loading.
     tile.cycling = true;
     try {
       await action.setSettings({ provider: next.id } satisfies ActionSettings);
       await this.showProviderReady(tile, action);
-      this.startAutoRefresh(tile, action);   // synchronous — uses cache
+      this.startAutoRefresh(tile, action);
       this.startDisplayRefresh(tile, action);
       LOG(`cycleProvider → ${next.id}`);
-      await this.refreshTile(tile, action);
     } finally {
+      // Release before the network fetch so the property inspector remains
+      // responsive while the data is loading.
       tile.cycling = false;
     }
+    // suppressAlert=true: if the cycled-to provider has no key configured,
+    // show the error text but skip the yellow ⚠ flash — it's too alarming
+    // when the user is just browsing through providers.
+    await this.refreshTile(tile, action, true);
   }
 
   // =========================================================================
   // TILE REFRESH
   // =========================================================================
 
-  private async refreshTile(tile: TileState, action: WillAppearEvent["action"]): Promise<void> {
+  private async refreshTile(tile: TileState, action: WillAppearEvent["action"], suppressAlert = false): Promise<void> {
     LOG(`refreshTile START (provider=${tile.currentProviderId})`);
 
     const provider = getProvider(tile.currentProviderId);
@@ -323,7 +332,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     } catch (err: unknown) {
       LOG(`refreshTile FETCH ERROR: ${String(err)}`);
       tile.lastFetchWasError = true;
-      const fe = await this.handleFetchError(action, provider.name, err);
+      const fe = await this.handleFetchError(action, provider.name, err, suppressAlert);
       if (fe.kind === "bad-api-key" || fe.kind === "coming-soon") {
         // Likely a configuration issue, but could be a temporary API glitch.
         // Stop normal refresh and schedule a retry in 10 min so it auto-recovers
@@ -390,6 +399,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     action: WillAppearEvent["action"],
     providerName: string,
     err: unknown,
+    suppressAlert = false,
   ): Promise<FetchError> {
     const fe = this.normalizeError(err);
 
@@ -402,9 +412,9 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     try {
       const title = this.formatError(providerName, fe);
       await action.setTitle(title);
-      // For key-setup errors, flash the built-in yellow ⚠ alert so it's
-      // clear this needs attention without leaving alarming text permanently.
-      if (fe.kind === "bad-api-key" || fe.kind === "no-api-key" || fe.kind === "coming-soon") {
+      // Flash the yellow ⚠ alert for key errors — but only on manual taps,
+      // not when cycling (suppressAlert=true), where the error text is enough.
+      if (!suppressAlert && (fe.kind === "bad-api-key" || fe.kind === "no-api-key" || fe.kind === "coming-soon")) {
         await action.showAlert();
       }
     } catch {
@@ -439,28 +449,32 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     }
 
     if (d.budgetTotal === 0) {
-      const todayStr = `$${d.dailyCost.toFixed(2)} today`;
-      // Show month-to-date when we have it (OpenAI, Claude) so the user
-      // gets both daily and monthly spend without having to set a budget.
+      // No budget set — show today's spend + month total if available.
+      // monthlyCost replaces the age line since it's more useful.
       if (d.monthlyCost != null) {
-        return `${short}\n${todayStr}\n$${d.monthlyCost.toFixed(2)} /mo`;
+        return `${short}\n${this.dollar(d.dailyCost)} today\n${this.dollar(d.monthlyCost)} /mo`;
       }
       if (d.dailyCost === 0) return `${short}\n$0 today\n${age}`;
-      return `${short}\n${todayStr}\n${age}`;
+      return `${short}\n${this.dollar(d.dailyCost)} today\n${age}`;
     }
 
     if (d.budgetRemaining <= 0) {
-      const over = Math.abs(d.budgetRemaining).toFixed(2);
-      return `${short}\n⚠ Over limit\n+$${over} over`;
+      const over = this.dollar(Math.abs(d.budgetRemaining));
+      return `${short}\n⚠ Over limit\n+${over} over`;
     }
 
     if (d.dailyCost === 0 && d.dailyTokens === 0) {
-      return `${short}\n$${d.budgetRemaining.toFixed(2)} left\n${age}`;
+      return `${short}\n${this.dollar(d.budgetRemaining)} left\n${age}`;
     }
 
     const pct    = (d.budgetRemaining / d.budgetTotal) * 100;
     const prefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
-    return `${prefix}${short}\n$${d.budgetRemaining.toFixed(2)} left\n${age}`;
+    return `${prefix}${short}\n${this.dollar(d.budgetRemaining)} left\n${age}`;
+  }
+
+  /** Format a USD amount safely — guards against NaN/Infinity from bad API data. */
+  private dollar(n: number): string {
+    return `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
   }
 
   private formatError(name: string, err: FetchError): string {
