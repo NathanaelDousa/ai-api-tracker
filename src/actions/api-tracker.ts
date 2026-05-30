@@ -449,15 +449,28 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     }
 
     if (d.budgetTotal === 0) {
-      // No budget set — show today's spend + month total if available.
-      // monthlyCost replaces the age line since it's more useful.
+      // No budget set — show today + month total (4 lines for OpenAI/Claude,
+      // 3 lines for providers without monthly data).
       if (d.monthlyCost != null) {
-        return `${short}\n${this.dollar(d.dailyCost)} today\n${this.dollar(d.monthlyCost)} /mo`;
+        return `${short}\n${this.dollar(d.dailyCost)} today\n${this.dollar(d.monthlyCost)} /mo\n${age}`;
       }
       if (d.dailyCost === 0) return `${short}\n$0 today\n${age}`;
       return `${short}\n${this.dollar(d.dailyCost)} today\n${age}`;
     }
 
+    // Budget is set — show remaining + monthly spend + age (4 lines for
+    // OpenAI/Claude, 3 lines for providers without monthly data).
+    if (d.monthlyCost != null) {
+      if (d.budgetRemaining <= 0) {
+        const over = this.dollar(Math.abs(d.budgetRemaining));
+        return `${short}\n⚠ Over limit\n+${over} over\n${age}`;
+      }
+      const pct    = (d.budgetRemaining / d.budgetTotal) * 100;
+      const prefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
+      return `${prefix}${short}\n${this.dollar(d.budgetRemaining)} left\n${this.dollar(d.monthlyCost)} /mo\n${age}`;
+    }
+
+    // 3-line fallback for providers without monthly data (DeepSeek, Gemini).
     if (d.budgetRemaining <= 0) {
       const over = this.dollar(Math.abs(d.budgetRemaining));
       return `${short}\n⚠ Over limit\n+${over} over`;
