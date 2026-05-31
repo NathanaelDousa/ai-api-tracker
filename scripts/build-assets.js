@@ -23,6 +23,10 @@ const icons = [
   { icns: "claude.icns",    fallback: "claude-logo.png",   out: "claude.png"   },
   { icns: "Gemini.icns",    fallback: "gemini-google.png", out: "gemini.png"   },
   { icns: "deepseek.icns",  fallback: "deepseek-logo.png", out: "deepseek.png" },
+  // Drop src/assets/openrouter.icns (or openrouter-logo.png) to replace the placeholder.
+  { icns: "openrouter.icns",   fallback: "fallback.png", out: "openrouter.png"  },
+  // Drop src/assets/grok.icns (or grok-logo.png) to replace the placeholder.
+  { icns: "grok.icns",         fallback: "fallback.png", out: "grok.png"        },
 ];
 
 const isMac = process.platform === "darwin";

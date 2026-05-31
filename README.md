@@ -8,10 +8,10 @@ Monitor your AI API spending and credit balances directly on your Stream Deck ke
 
 | Provider | What's displayed | Needs |
 |----------|-----------------|-------|
-| **OpenAI** | Daily spend · Monthly spend vs budget | Admin API key |
-| **Claude** | Daily spend · Monthly spend vs budget | Admin API key |
-| **Gemini** | Daily request count | GCP service account |
-| **DeepSeek** | Remaining credit balance | Regular API key |
+| **OpenAI** | Daily spend · Monthly spend vs budget · live estimate for recent token usage | Admin API key |
+| **Claude** | Daily spend · Monthly spend vs budget · daily message token count | Admin API key |
+| **Gemini** | Successful request count or estimated spend | GCP service account |
+| **DeepSeek** | Remaining credit balance · locally tracked spend trend | Regular API key |
 
 Each tile tracks one provider. You can place as many tiles as you like — one per provider, or several showing the same provider at different zoom levels.
 
@@ -21,6 +21,8 @@ Each tile tracks one provider. You can place as many tiles as you like — one p
 
 - **Live data** — auto-refreshes on a configurable interval (1 min → 15 min or manual)
 - **Budget tracking** — set a monthly budget and see how much you have left; tile turns amber at ≤ 25 % and red at ≤ 10 %
+- **Trend line** — optional today-vs-yesterday trend for spend or request count
+- **Estimate marker** — values prefixed with `~` include best-effort local estimation
 - **Hold to cycle** — hold any tile for 0.8 s to flip through all providers without opening settings
 - **Tap to refresh** — single tap forces an immediate refresh
 - **Bad key alert** — Stream Deck's native ⚠ flash fires when the key is wrong or missing, so you know instantly
@@ -62,7 +64,7 @@ Each provider has different authentication requirements. The links below walk yo
 - [OpenAI setup](docs/setup-openai.md) — Admin key required
 - [Claude setup](docs/setup-claude.md) — Admin key required (Team/Enterprise only)
 - [Gemini setup](docs/setup-gemini.md) — GCP service account required *(most involved)*
-- **DeepSeek** — paste a regular API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys), no extra steps needed
+- **DeepSeek** — paste a regular API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys); CNY balances can use an automatic daily exchange rate or a manual rate
 
 ---
 

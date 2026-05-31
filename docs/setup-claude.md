@@ -1,6 +1,6 @@
 # Claude (Anthropic) Setup
 
-The plugin uses Anthropic's **Organization Cost Report API** (`/v1/organizations/cost_report`), which returns daily billed USD amounts. This endpoint requires an **Admin key** — regular API keys (`sk-ant-api…`) will receive a 403 error and the tile will flash ⚠.
+The plugin uses Anthropic's **Organization Cost Report API** (`/v1/organizations/cost_report`), which returns daily billed USD amounts. It also reads the **Messages Usage Report API** for today's message token counts. These endpoints require an **Admin key** — regular API keys (`sk-ant-api…`) will show "Admin key required" and the tile will flash ⚠.
 
 > **Plan requirement**: Admin keys are only available on **Team and Enterprise plans**. Individual (free/pro) Anthropic accounts do not have access to organization-level billing data.
 
@@ -57,3 +57,5 @@ If the tile flashes ⚠ after using an `sk-ant-admin…` key:
 | Line 3 | Budget remaining or monthly total |
 
 When no budget is set, line 3 shows your total month-to-date spend.
+
+The spend total comes from Anthropic's cost report. The token count is read from the usage report and is mainly used for diagnostics and future display modes.

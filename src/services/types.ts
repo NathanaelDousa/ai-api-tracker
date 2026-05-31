@@ -15,6 +15,14 @@ export interface UsageData {
   /** Month-to-date spend in USD. Undefined for balance-based providers (DeepSeek)
    *  or when the provider doesn't expose monthly data (Gemini). */
   monthlyCost?: number;
+  /** Month-to-date request/token count for request-based providers (Gemini without
+   *  a cost/request setting). Parallel to dailyTokens. */
+  monthlyTokens?: number;
+  /** Daily delta vs yesterday. USD for cost-based displays, request count for
+   *  request-based displays. Undefined until two consecutive days of data exist. */
+  trend?: number;
+  /** True when displayed spend includes a best-effort live estimate. */
+  isEstimate?: boolean;
   /** User-configured monthly budget (USD) */
   budgetTotal: number;
   /** Budget minus estimated spend (best-effort, may be zero) */
@@ -34,11 +42,15 @@ export interface UsageData {
 
 export type FetchError =
   | { kind: "no-api-key" }
+  | { kind: "admin-key-required" }
   | { kind: "bad-api-key"; status: number }
+  | { kind: "service-account-missing" }
+  | { kind: "service-account-invalid"; message: string }
   | { kind: "rate-limited"; retryAfter?: number }
   | { kind: "network-error"; message: string }
   | { kind: "api-error"; status: number }
   | { kind: "coming-soon" }
+  | { kind: "billing-unavailable" }
   | { kind: "unknown-error"; message: string };
 
 // --------------------------------------------------------------------------
@@ -79,19 +91,33 @@ export type GlobalSettings = Record<string, unknown> & {
   openaiApiKey?: string;
   claudeApiKey?: string;
   geminiApiKey?: string;
+  /** Imported service account JSON from the property inspector file picker.
+   *  Kept locally in Stream Deck global settings, like provider API keys. */
+  geminiServiceAccountJson?: string;
+  geminiServiceAccountFileName?: string;
+  /** Legacy/manual fallback path. Used when no JSON has been imported. */
   geminiServiceAccountPath?: string;
   geminiProjectId?: string;
   /** Average cost per Gemini API call in USD. Used to estimate spend from
    *  request counts when no direct billing endpoint is available. */
   geminiCostPerRequest?: number;
+  geminiMonthlyBudget?: number;
   deepseekApiKey?: string;
-  /** Shared fallback budget used when a provider-specific budget is not set */
+  /** Optional manual CNY→USD conversion rate. When unset, DeepSeek uses a
+   *  cached live exchange-rate lookup with a hardcoded fallback. */
+  deepseekCnyToUsdRate?: number;
+  /** Legacy shared budget from older plugin versions. Kept only so old
+   *  settings deserialize cleanly; providers no longer use it as a fallback. */
   monthlyBudget?: number;
-  /** Per-provider budgets — override monthlyBudget when set */
+  /** Per-provider budgets */
   openaiMonthlyBudget?: number;
   claudeMonthlyBudget?: number;
   deepseekMonthlyBudget?: number;
-  refreshInterval?: number;
+  openrouterApiKey?: string;
+  openrouterMonthlyBudget?: number;
+  grokApiKey?: string;
+  grokMonthlyBudget?: number;
+  refreshInterval?: number | string;
 };
 
 // --------------------------------------------------------------------------
@@ -101,4 +127,13 @@ export type GlobalSettings = Record<string, unknown> & {
 export type ActionSettings = {
   /** Which provider this tile tracks (e.g. "openai", "claude") */
   provider?: string;
+  /** How the tile renders its data.
+   *  "standard"      — default 3-4 line summary
+   *  "big-remaining" — 2 lines: name + remaining balance/credit
+   *  "big-monthly"   — 2 lines: name + month-to-date spend
+   *  "big-daily"     — 2 lines: name + today's spend / request count */
+  displayMode?: string;
+  /** "yes" (default) shows today-vs-yesterday on the last line when data exists.
+   *  "no" always shows the plain age timestamp instead. */
+  showTrend?: string | boolean;
 };

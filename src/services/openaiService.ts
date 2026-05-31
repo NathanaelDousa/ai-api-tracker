@@ -1,9 +1,21 @@
 import streamDeck from "@elgato/streamdeck";
 import type { UsageData, FetchError, GlobalSettings } from "./types";
+import { providerBudget } from "./budget";
+import { normalizeSecret } from "./keyUtils";
+import {
+  estimateCompletionUsage,
+  estimateEmbeddingUsage,
+  overlayLiveEstimateOnSettledCosts,
+  type OpenAICompletionUsage,
+  type OpenAIEmbeddingUsage,
+} from "./openaiEstimator";
+import { recordAndGetTrend } from "./trendStore";
 
 // GET /v1/organization/costs — requires an Admin API key.
-// Returns actual billed USD amounts per day bucket, avoiding hardcoded
-// per-model rate tables that go stale as OpenAI changes pricing.
+// Returns actual billed USD amounts per day bucket, but can lag behind live
+// API activity. We pair it with GET /v1/organization/usage/completions for
+// today's token counts, then price those with a local table as a best-effort
+// live estimate until the Costs API catches up.
 
 const MAX_PAGES = 10;
 
@@ -28,9 +40,40 @@ interface OrgCostsResponse {
   next_page: string | null;
 }
 
+interface UsageBucket {
+  start_time: number;
+  end_time:   number;
+  results:    OpenAICompletionUsage[];
+}
+
+interface OrgCompletionsUsageResponse {
+  data:      UsageBucket[];
+  has_more:  boolean;
+  next_page: string | null;
+}
+
+interface EmbeddingUsageBucket {
+  start_time: number;
+  end_time:   number;
+  results:    OpenAIEmbeddingUsage[];
+}
+
+interface OrgEmbeddingsUsageResponse {
+  data:      EmbeddingUsageBucket[];
+  has_more:  boolean;
+  next_page: string | null;
+}
+
+interface LiveUsageEstimate {
+  cost: number;
+  tokens: number;
+  unpricedModels: string[];
+  notes: string[];
+}
+
 export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
-  const apiKey = gs.openaiApiKey;
-  const budget = Math.max(0, Number(gs.openaiMonthlyBudget ?? gs.monthlyBudget) || 0);
+  const apiKey = normalizeSecret(gs.openaiApiKey);
+  const budget = providerBudget(gs, "openaiMonthlyBudget");
 
   if (!apiKey) {
     throw { kind: "no-api-key" } satisfies FetchError;
@@ -66,26 +109,55 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
     `[OpenAI] pages=${pages} buckets=${allBuckets.length}`,
   );
 
-  let monthlyCost = 0;
-  let dailyCost   = 0;
+  let settledMonthlyCost = 0;
+  let settledDailyCost   = 0;
 
   for (const bucket of allBuckets) {
     for (const r of (bucket.results ?? [])) {
-      monthlyCost += r.amount.value ?? 0;
+      settledMonthlyCost += Number(r.amount?.value) || 0;
     }
     if (bucket.start_time >= todayTs) {
       for (const r of (bucket.results ?? [])) {
-        dailyCost += r.amount.value ?? 0;
+        settledDailyCost += Number(r.amount?.value) || 0;
       }
     }
   }
 
+  streamDeck.logger.info(
+    `[OpenAI] settledMonthlyCost=$${settledMonthlyCost.toFixed(4)} settledDailyCost=$${settledDailyCost.toFixed(4)} budget=$${budget}`,
+  );
+
+  const liveEstimate = await fetchLiveUsageEstimateSafely(apiKey, todayTs, endTs);
+  const overlay = overlayLiveEstimateOnSettledCosts(
+    settledDailyCost,
+    settledMonthlyCost,
+    liveEstimate?.cost,
+  );
+
+  if (liveEstimate) {
+    streamDeck.logger.info(
+      `[OpenAI] liveEstimate=$${liveEstimate.cost.toFixed(4)} tokens=${liveEstimate.tokens} estimateDelta=$${overlay.estimateDelta.toFixed(4)}`,
+    );
+    if (liveEstimate.unpricedModels.length > 0) {
+      streamDeck.logger.warn(
+        `[OpenAI] unpriced models skipped in live estimate: ${liveEstimate.unpricedModels.join(", ")}`,
+      );
+    }
+    if (liveEstimate.notes.length > 0) {
+      streamDeck.logger.warn(`[OpenAI] live estimate notes: ${liveEstimate.notes.join("; ")}`);
+    }
+  }
+
+  const trend = recordAndGetTrend("openai", round3(overlay.dailyCost));
+
   return {
-    dailyTokens:     0,
-    dailyCost:       round3(dailyCost),
-    monthlyCost:     round2(monthlyCost),
+    dailyTokens:     liveEstimate?.tokens ?? 0,
+    dailyCost:       round3(overlay.dailyCost),
+    monthlyCost:     round2(overlay.monthlyCost),
+    trend,
+    isEstimate:      overlay.isEstimate ? true : undefined,
     budgetTotal:     budget,
-    budgetRemaining: round2(budget - monthlyCost),
+    budgetRemaining: round2(budget - overlay.monthlyCost),
     lastUpdated:     Date.now(),
   };
 }
@@ -119,6 +191,179 @@ async function fetchPage(apiKey: string, url: string): Promise<OrgCostsResponse>
   }
 
   return response.json() as Promise<OrgCostsResponse>;
+}
+
+async function fetchLiveUsageEstimateSafely(
+  apiKey: string,
+  todayTs: number,
+  endTs: number,
+): Promise<LiveUsageEstimate | null> {
+  try {
+    return await fetchLiveUsageEstimate(apiKey, todayTs, endTs);
+  } catch (err: unknown) {
+    streamDeck.logger.warn(
+      `[OpenAI] live usage estimate unavailable; falling back to settled costs: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+async function fetchLiveUsageEstimate(
+  apiKey: string,
+  startTs: number,
+  endTs: number,
+): Promise<LiveUsageEstimate> {
+  const [completionOutcome, embeddingOutcome] = await Promise.allSettled([
+    fetchCompletionUsageResults(apiKey, startTs, endTs),
+    fetchEmbeddingUsageResults(apiKey, startTs, endTs),
+  ]);
+  const completionResults = completionOutcome.status === "fulfilled" ? completionOutcome.value : [];
+  const embeddingResults = embeddingOutcome.status === "fulfilled" ? embeddingOutcome.value : [];
+  const endpointNotes: string[] = [];
+
+  if (completionOutcome.status === "rejected") {
+    endpointNotes.push(`completions usage unavailable: ${String(completionOutcome.reason)}`);
+  }
+  if (embeddingOutcome.status === "rejected") {
+    endpointNotes.push(`embeddings usage unavailable: ${String(embeddingOutcome.reason)}`);
+  }
+
+  const completionEstimate = estimateCompletionUsage(completionResults);
+  const embeddingEstimate = estimateEmbeddingUsage(embeddingResults);
+  const tokens = completionResults.reduce((sum, r) => {
+    return sum +
+      positive(r.input_tokens) +
+      positive(r.input_audio_tokens) +
+      positive(r.output_tokens) +
+      positive(r.output_audio_tokens);
+  }, 0) + embeddingResults.reduce((sum, r) => sum + positive(r.input_tokens), 0);
+
+  return {
+    cost: completionEstimate.cost + embeddingEstimate.cost,
+    tokens,
+    unpricedModels: uniqueSorted([
+      ...completionEstimate.unpricedModels,
+      ...embeddingEstimate.unpricedModels,
+    ]),
+    notes: uniqueSorted([
+      ...completionEstimate.notes,
+      ...embeddingEstimate.notes,
+      ...endpointNotes,
+    ]),
+  };
+}
+
+async function fetchCompletionUsageResults(
+  apiKey: string,
+  startTs: number,
+  endTs: number,
+): Promise<OpenAICompletionUsage[]> {
+  const allResults: OpenAICompletionUsage[] = [];
+  let pageToken: string | null = null;
+  let pages = 0;
+
+  do {
+    const params = new URLSearchParams({
+      start_time:   String(startTs),
+      end_time:     String(endTs),
+      bucket_width: "1d",
+      limit:        "1",
+    });
+    params.append("group_by", "model");
+    params.append("group_by", "batch");
+    params.append("group_by", "service_tier");
+    if (pageToken) params.set("page", pageToken);
+
+    const url = `https://api.openai.com/v1/organization/usage/completions?${params.toString()}`;
+    streamDeck.logger.info(`[OpenAI] fetching live usage: ${url}`);
+    const page = await fetchUsagePage(apiKey, url);
+    for (const bucket of page.data ?? []) {
+      allResults.push(...(bucket.results ?? []));
+    }
+    pageToken = page.has_more ? (page.next_page ?? null) : null;
+    pages++;
+  } while (pageToken && pages < MAX_PAGES);
+
+  return allResults;
+}
+
+async function fetchEmbeddingUsageResults(
+  apiKey: string,
+  startTs: number,
+  endTs: number,
+): Promise<OpenAIEmbeddingUsage[]> {
+  const allResults: OpenAIEmbeddingUsage[] = [];
+  let pageToken: string | null = null;
+  let pages = 0;
+
+  do {
+    const params = new URLSearchParams({
+      start_time:   String(startTs),
+      end_time:     String(endTs),
+      bucket_width: "1d",
+      limit:        "1",
+    });
+    params.append("group_by", "model");
+    if (pageToken) params.set("page", pageToken);
+
+    const url = `https://api.openai.com/v1/organization/usage/embeddings?${params.toString()}`;
+    streamDeck.logger.info(`[OpenAI] fetching live embedding usage: ${url}`);
+    const page = await fetchEmbeddingsPage(apiKey, url);
+    for (const bucket of page.data ?? []) {
+      allResults.push(...(bucket.results ?? []));
+    }
+    pageToken = page.has_more ? (page.next_page ?? null) : null;
+    pages++;
+  } while (pageToken && pages < MAX_PAGES);
+
+  return allResults;
+}
+
+async function fetchUsagePage(apiKey: string, url: string): Promise<OrgCompletionsUsageResponse> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal:  AbortSignal.timeout(30_000),
+    });
+  } catch (err: unknown) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "(unreadable)");
+    throw new Error(`HTTP ${response.status}: ${body}`);
+  }
+
+  return response.json() as Promise<OrgCompletionsUsageResponse>;
+}
+
+async function fetchEmbeddingsPage(apiKey: string, url: string): Promise<OrgEmbeddingsUsageResponse> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal:  AbortSignal.timeout(30_000),
+    });
+  } catch (err: unknown) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "(unreadable)");
+    throw new Error(`HTTP ${response.status}: ${body}`);
+  }
+
+  return response.json() as Promise<OrgEmbeddingsUsageResponse>;
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
+
+function positive(n: unknown): number {
+  const value = Number(n);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function round2(n: number): number { return Math.round(n * 100)  / 100; }

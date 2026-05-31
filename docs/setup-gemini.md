@@ -2,7 +2,7 @@
 
 Google's Gemini API doesn't expose a usage or billing endpoint accessible with a simple API key. Instead, the plugin reads daily **request counts** from **Google Cloud Monitoring**, which requires a **GCP service account**.
 
-> **What's shown**: Gemini tiles display today's **request count** (number of API calls), not spend. Google does not expose per-key token costs through Cloud Monitoring for the Developer API tier.
+> **What's shown**: Gemini tiles display today's successful **request count** (2xx API calls). If you enter an average **Cost/request ($)** in settings, the tile converts request counts into an estimated spend and prefixes estimated dollar values with `~`.
 
 This setup takes about 10 minutes and only needs to be done once.
 
@@ -82,11 +82,13 @@ The plugin can read the project ID directly from the JSON file, so this step is 
 
 1. Click your **API Tracker** tile in the Stream Deck app.
 2. Scroll to the **Gemini (Google)** section in the property inspector.
-3. In **SA File Path**, enter the full absolute path to the JSON file, e.g.:
-   ```
-   /Users/yourname/gemini-sa.json
-   ```
-4. In **GCP Project**, enter your project ID (optional if it's already in the JSON).
+3. In **SA JSON**, click **Choose JSON** and select the service account key file you downloaded.
+4. In **GCP Project**, enter your project ID only if you want to override the `"project_id"` in the JSON.
+5. Optional: enter **Cost/request ($)** if you want spend estimates instead of raw request count.
+6. Optional: enter **Budget ($)** to show estimated monthly remaining budget when Cost/request is set.
+
+The JSON is imported into local Stream Deck settings, similar to the API keys
+for the other providers. Keep the downloaded key file private.
 
 ---
 
@@ -98,11 +100,10 @@ Tap the tile to trigger a manual refresh. If everything is configured correctly,
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| Tile flashes ⚠ on first use | SA file path is wrong or file was moved | Check the path is absolute and the file exists |
+| Tile flashes ⚠ on first use | Service account JSON was not imported or is invalid | Re-select the JSON file in the Gemini section |
 | ⚠ flash + tile shows "Auth error" | Service account key was revoked or project IAM changed | Re-download the JSON key from GCP |
 | Tile shows `0 req` even though you've made calls | Cloud Monitoring API not enabled | Enable it in Step 1 |
-| Tile shows `0 req` for a brand-new project | No data yet — monitoring has up to 3 min latency | Wait a few minutes, tap to refresh |
-| Error on Windows about file path | Use forward slashes or escape backslashes: `C:/Users/...` | Use `C:/Users/yourname/gemini-sa.json` |
+| Tile shows `0 req` for a brand-new project | No data yet — monitoring can lag | Wait and tap to refresh |
 
 ---
 
@@ -110,4 +111,4 @@ Tap the tile to trigger a manual refresh. If everything is configured correctly,
 
 Cloud Monitoring aggregates request counts in **1-day windows** (UTC). The plugin sums today's window, so counts reset at midnight UTC. If you make calls at 11 PM and midnight crosses, the count restarts — this is a Google-side limitation.
 
-There's typically a **2–3 minute lag** between a Gemini API call and it appearing in Cloud Monitoring metrics.
+Google Cloud service runtime metrics can take several minutes and sometimes longer to appear in Cloud Monitoring. The tile should be treated as a recent operational signal, not an instant billing ledger.

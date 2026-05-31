@@ -27,6 +27,9 @@ import { fetchOpenAIUsage } from "./openaiService";
 import { fetchClaudeUsage } from "./claudeService";
 import { fetchGeminiUsage } from "./geminiService";
 import { fetchDeepSeekUsage } from "./deepseekService";
+import { fetchOpenRouterUsage } from "./openrouterService";
+import { fetchGrokUsage } from "./grokService";
+import { withProviderCache } from "./providerCache";
 
 // -- Registry ---------------------------------------------------------------
 
@@ -35,7 +38,7 @@ export const ALL_PROVIDERS: ProviderConfig[] = [
   {
     id: "openai",
     name: "OpenAI",
-    fetcher: fetchOpenAIUsage,
+    fetcher: withProviderCache("openai", fetchOpenAIUsage),
     keySetting: "openaiApiKey",
     color: "#10a37f",
     implemented: true,
@@ -44,7 +47,7 @@ export const ALL_PROVIDERS: ProviderConfig[] = [
   {
     id: "claude",
     name: "Claude",
-    fetcher: fetchClaudeUsage,
+    fetcher: withProviderCache("claude", fetchClaudeUsage),
     keySetting: "claudeApiKey",
     color: "#d97706",
     implemented: true,
@@ -53,8 +56,8 @@ export const ALL_PROVIDERS: ProviderConfig[] = [
   {
     id: "gemini",
     name: "Gemini",
-    fetcher: fetchGeminiUsage,
-    keySetting: "geminiApiKey",
+    fetcher: withProviderCache("gemini", fetchGeminiUsage),
+    keySetting: "geminiServiceAccountPath",
     color: "#4285f4",
     implemented: true,
     iconPath: "imgs/providers/gemini",
@@ -62,11 +65,29 @@ export const ALL_PROVIDERS: ProviderConfig[] = [
   {
     id: "deepseek",
     name: "DeepSeek",
-    fetcher: fetchDeepSeekUsage,
+    fetcher: withProviderCache("deepseek", fetchDeepSeekUsage),
     keySetting: "deepseekApiKey",
     color: "#6366f1",
     implemented: true,
     iconPath: "imgs/providers/deepseek",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    fetcher: withProviderCache("openrouter", fetchOpenRouterUsage),
+    keySetting: "openrouterApiKey",
+    color: "#6d28d9",
+    implemented: true,
+    iconPath: "imgs/providers/openrouter",
+  },
+  {
+    id: "grok",
+    name: "Grok",
+    fetcher: withProviderCache("grok", fetchGrokUsage),
+    keySetting: "grokApiKey",
+    color: "#1a1a1a",
+    implemented: true,
+    iconPath: "imgs/providers/grok",
   },
 ];
 

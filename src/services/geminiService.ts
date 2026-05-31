@@ -1,7 +1,9 @@
-import fs from "node:fs";
 import crypto from "node:crypto";
 import streamDeck from "@elgato/streamdeck";
 import type { UsageData, FetchError, GlobalSettings } from "./types";
+import { providerBudget } from "./budget";
+import { readGeminiServiceAccount, type GeminiServiceAccount } from "./geminiCredentials";
+import { recordAndGetTrend } from "./trendStore";
 
 // ============================================================================
 // Gemini Usage Service — Google Cloud Monitoring API
@@ -14,10 +16,10 @@ import type { UsageData, FetchError, GlobalSettings } from "./types";
 //   1. GCP project with Gemini API + Cloud Monitoring API enabled
 //   2. Service account with roles/monitoring.viewer
 //   3. Download service account JSON key file
-//   4. Enter the file path + project ID in plugin settings
+//   4. Import the JSON file in plugin settings
 //
-// What this returns: daily REQUEST COUNT (not tokens or cost — Google does not
-// expose per-key token counts via Cloud Monitoring for the Developer API).
+// What this returns: successful daily REQUEST COUNT. When the user provides an
+// average cost/request, we convert request counts to estimated spend.
 
 const OAUTH_URL   = "https://oauth2.googleapis.com/token";
 const MONITORING  = "https://monitoring.googleapis.com/v3";
@@ -26,70 +28,88 @@ const GEMINI_SVC  = "generativelanguage.googleapis.com";
 const METRIC_TYPE = "serviceruntime.googleapis.com/api/request_count";
 
 // --------------------------------------------------------------------------
-// Service-account JSON shape
-// --------------------------------------------------------------------------
-
-interface ServiceAccount {
-  type:         string;
-  client_email: string;
-  private_key:  string;
-  project_id:   string;
-}
-
-// --------------------------------------------------------------------------
 // Access-token cache (lives for the plugin process lifetime)
 // --------------------------------------------------------------------------
 
-let tokenCache: { value: string; expiresAt: number } | null = null;
+let tokenCache: { key: string; value: string; expiresAt: number } | null = null;
 
 // --------------------------------------------------------------------------
 // Public API
 // --------------------------------------------------------------------------
 
 export async function fetchGeminiUsage(gs: GlobalSettings): Promise<UsageData> {
-  const saPath    = gs.geminiServiceAccountPath?.trim();
+  const sa        = readGeminiServiceAccount(gs);
   const projectId = gs.geminiProjectId?.trim();
-
-  if (!saPath) {
-    throw { kind: "no-api-key" } satisfies FetchError;
-  }
-
-  let sa: ServiceAccount;
-  try {
-    sa = JSON.parse(fs.readFileSync(saPath, "utf8")) as ServiceAccount;
-  } catch (err: unknown) {
-    throw {
-      kind:    "unknown-error",
-      message: `Cannot read SA file: ${err instanceof Error ? err.message : String(err)}`,
-    } satisfies FetchError;
-  }
-
-  if (sa.type !== "service_account" || !sa.client_email || !sa.private_key) {
-    throw {
-      kind:    "unknown-error",
-      message: "Invalid service account JSON",
-    } satisfies FetchError;
-  }
 
   const project = projectId || sa.project_id;
   if (!project) {
     throw {
-      kind:    "unknown-error",
+      kind:    "service-account-invalid",
       message: "No GCP project ID in settings or SA JSON",
     } satisfies FetchError;
   }
 
   const accessToken = await getAccessToken(sa);
 
-  const now       = new Date();
-  const startTime = new Date(Date.UTC(
+  const now = new Date();
+  const todayStartTime = new Date(Date.UTC(
     now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(),
+  )).toISOString();
+  const monthStartTime = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), 1,
   )).toISOString();
   const endTime = now.toISOString();
 
+  const costPerReq = Math.max(0, Number(gs.geminiCostPerRequest) || 0);
+  const budget = providerBudget(gs, "geminiMonthlyBudget");
+
+  // Always fetch both periods in parallel — monthly is shown even without cost/req.
+  const [todayRequests, monthlyRequests] = await Promise.all([
+    fetchRequestCount(accessToken, project, todayStartTime, endTime),
+    fetchRequestCount(accessToken, project, monthStartTime,  endTime),
+  ]);
+
+  streamDeck.logger.info(
+    `[Gemini] today=${todayRequests} month=${monthlyRequests}` +
+    (costPerReq > 0 ? ` costPerReq=$${costPerReq}` : ""),
+  );
+
+  if (costPerReq > 0) {
+    const estimatedDailyCost   = todayRequests   * costPerReq;
+    const estimatedMonthlyCost = monthlyRequests * costPerReq;
+    const trend = recordAndGetTrend("gemini:usd", round3(estimatedDailyCost));
+    return {
+      dailyTokens:     todayRequests,
+      monthlyTokens:   monthlyRequests,
+      dailyCost:       round3(estimatedDailyCost),
+      monthlyCost:     round2(estimatedMonthlyCost),
+      trend,
+      isEstimate:      true,
+      budgetTotal:     budget,
+      budgetRemaining: round2(budget - estimatedMonthlyCost),
+      lastUpdated:     Date.now(),
+      unit:            "usd",
+    };
+  }
+
+  const trend = recordAndGetTrend("gemini:requests", todayRequests);
+  return {
+    dailyTokens:     todayRequests,
+    monthlyTokens:   monthlyRequests,
+    dailyCost:       0,
+    trend,
+    budgetTotal:     0,
+    budgetRemaining: 0,
+    lastUpdated:     Date.now(),
+    unit:            "requests",
+  };
+}
+
+async function fetchRequestCount(accessToken: string, project: string, startTime: string, endTime: string): Promise<number> {
   const filter =
     `metric.type="${METRIC_TYPE}" AND ` +
-    `resource.labels.service="${GEMINI_SVC}"`;
+    `resource.labels.service="${GEMINI_SVC}" AND ` +
+    `metric.labels.response_code_class="2xx"`;
 
   const params = new URLSearchParams({
     filter,
@@ -118,7 +138,15 @@ export async function fetchGeminiUsage(gs: GlobalSettings): Promise<UsageData> {
   if (!response.ok) {
     if (response.status === 401 || response.status === 403) {
       tokenCache = null;
-      throw { kind: "bad-api-key", status: response.status } satisfies FetchError;
+      const body = await response.text().catch(() => "");
+      streamDeck.logger.warn(`[Gemini] Monitoring API ${response.status}: ${body.slice(0, 300)}`);
+      const billingRequired = body.includes("billing");
+      throw {
+        kind:    "service-account-invalid",
+        message: response.status === 403
+          ? (billingRequired ? "Enable billing on GCP project" : "SA needs monitoring.viewer role")
+          : "SA credentials rejected",
+      } satisfies FetchError;
     }
     if (response.status === 429) {
       throw { kind: "rate-limited" } satisfies FetchError;
@@ -137,50 +165,24 @@ export async function fetchGeminiUsage(gs: GlobalSettings): Promise<UsageData> {
     }
   }
 
-  const costPerReq = Math.max(0, Number(gs.geminiCostPerRequest) || 0);
-  const estimatedCost = totalRequests * costPerReq;
-
-  streamDeck.logger.info(
-    `[Gemini] requests today=${totalRequests}` +
-    (costPerReq > 0 ? ` estimatedCost=$${estimatedCost.toFixed(4)}` : ""),
-  );
-
-  if (costPerReq > 0) {
-    // User configured a cost rate — show estimated spend instead of raw counts.
-    return {
-      dailyTokens:     totalRequests,
-      dailyCost:       estimatedCost,
-      budgetTotal:     0,
-      budgetRemaining: 0,
-      lastUpdated:     Date.now(),
-      unit:            "usd",
-    };
-  }
-
-  return {
-    dailyTokens:     totalRequests,
-    dailyCost:       0,
-    budgetTotal:     0,
-    budgetRemaining: 0,
-    lastUpdated:     Date.now(),
-    unit:            "requests",
-  };
+  return totalRequests;
 }
 
 // --------------------------------------------------------------------------
 // JWT + OAuth
 // --------------------------------------------------------------------------
 
-async function getAccessToken(sa: ServiceAccount): Promise<string> {
-  if (tokenCache && Date.now() < tokenCache.expiresAt - 60_000) {
+async function getAccessToken(sa: GeminiServiceAccount): Promise<string> {
+  const cacheKey = tokenCacheKey(sa);
+  if (tokenCache && tokenCache.key === cacheKey && Date.now() < tokenCache.expiresAt - 60_000) {
     return tokenCache.value;
   }
   const { access_token, expires_in } = await fetchAccessToken(sa);
-  tokenCache = { value: access_token, expiresAt: Date.now() + expires_in * 1000 };
+  tokenCache = { key: cacheKey, value: access_token, expiresAt: Date.now() + expires_in * 1000 };
   return access_token;
 }
 
-async function fetchAccessToken(sa: ServiceAccount): Promise<{ access_token: string; expires_in: number }> {
+async function fetchAccessToken(sa: GeminiServiceAccount): Promise<{ access_token: string; expires_in: number }> {
   const jwt = buildJWT(sa);
   let response: Response;
   try {
@@ -197,13 +199,16 @@ async function fetchAccessToken(sa: ServiceAccount): Promise<{ access_token: str
     } satisfies FetchError;
   }
   if (!response.ok) {
-    throw { kind: "bad-api-key", status: response.status } satisfies FetchError;
+    throw {
+      kind:    "service-account-invalid",
+      message: `OAuth failed (${response.status}): check SA credentials`,
+    } satisfies FetchError;
   }
   const data = await response.json() as { access_token: string; expires_in: number };
   return data;
 }
 
-function buildJWT(sa: ServiceAccount): string {
+function buildJWT(sa: GeminiServiceAccount): string {
   const now  = Math.floor(Date.now() / 1000);
   const head = b64url(Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })));
   const body = b64url(Buffer.from(JSON.stringify({
@@ -218,9 +223,21 @@ function buildJWT(sa: ServiceAccount): string {
   return `${data}.${sig}`;
 }
 
+function tokenCacheKey(sa: GeminiServiceAccount): string {
+  return crypto
+    .createHash("sha256")
+    .update(sa.client_email)
+    .update("\0")
+    .update(sa.private_key)
+    .digest("hex");
+}
+
 function b64url(buf: Buffer): string {
   return buf.toString("base64")
     .replace(/\+/g, "-")
     .replace(/\//g, "_")
     .replace(/=/g, "");
 }
+
+function round2(n: number): number { return Math.round(n * 100) / 100; }
+function round3(n: number): number { return Math.round(n * 1000) / 1000; }

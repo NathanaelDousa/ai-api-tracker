@@ -11,6 +11,7 @@ import streamDeck, {
 } from "@elgato/streamdeck";
 import type { UsageData, FetchError, ActionSettings, GlobalSettings } from "../services/types";
 import { getProvider, DEFAULT_PROVIDER_ID, ALL_PROVIDERS } from "../services/providerRegistry";
+import { formatUsageTitle } from "./titleFormatter";
 
 const LOG = (msg: string) => streamDeck.logger.info(`[AI Tracker] ${msg}`);
 
@@ -32,6 +33,8 @@ interface TileState {
   currentProviderId: string;
   lastSuccessData: { data: UsageData; providerName: string } | null;
   fetchInProgress: boolean;
+  displayMode: string;
+  showTrend: boolean;
   /** True when the last fetch ended in a permanent-ish error (bad key, no key).
    *  Used by onDidReceiveGlobalSettings to trigger an immediate retry as soon
    *  as the user saves new settings. */
@@ -107,10 +110,16 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         fetchInProgress:   false,
         lastFetchWasError: false,
         cycling:           false,
+        displayMode:       "standard",
+        showTrend:         true,
       };
       this.tiles.set(id, s);
     }
     return s;
+  }
+
+  private isTrendEnabled(value: ActionSettings["showTrend"]): boolean {
+    return value !== "no" && value !== false;
   }
 
   // =========================================================================
@@ -129,6 +138,8 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       // Use ev.payload.settings directly — calling action.getSettings() here
       // would cause Stream Deck to fire onDidReceiveSettings again.
       tile.currentProviderId = ev.payload.settings.provider ?? DEFAULT_PROVIDER_ID;
+      tile.displayMode       = ev.payload.settings.displayMode ?? "standard";
+      tile.showTrend         = this.isTrendEnabled(ev.payload.settings.showTrend);
 
       // Eagerly populate the global settings cache on first tile appearance.
       // This call is safe here — it is NOT inside onDidReceiveSettings's call
@@ -229,14 +240,32 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       // Use ev.payload.settings directly — calling action.getSettings() here
       // would cause Stream Deck to fire onDidReceiveSettings again, creating
       // an infinite loop.
-      const newProvider = ev.payload.settings.provider ?? DEFAULT_PROVIDER_ID;
-      const providerChanged = newProvider !== tile.currentProviderId;
+      const newProvider    = ev.payload.settings.provider    ?? DEFAULT_PROVIDER_ID;
+      const newDisplayMode = ev.payload.settings.displayMode ?? "standard";
+      const newShowTrend   = this.isTrendEnabled(ev.payload.settings.showTrend);
+      const providerChanged = newProvider    !== tile.currentProviderId;
+      const modeChanged     = newDisplayMode !== tile.displayMode;
+      const trendChanged    = newShowTrend   !== tile.showTrend;
 
       if (providerChanged) {
         tile.currentProviderId = newProvider;
         tile.lastSuccessData   = null;
         tile.lastFetchWasError = false;
         await this.showProviderReady(tile, action);
+      }
+
+      if (modeChanged || trendChanged) {
+        tile.displayMode = newDisplayMode;
+        tile.showTrend   = newShowTrend;
+        // Re-render immediately using cached data so the new layout appears
+        // without waiting for the next data fetch.
+        if (tile.lastSuccessData && !providerChanged) {
+          const { data, providerName } = tile.lastSuccessData;
+          await this.safeSetTitle(action, formatUsageTitle(providerName, data, {
+            displayMode: newDisplayMode,
+            showTrend:   newShowTrend,
+          }));
+        }
       }
 
       this.stopAutoRefresh(tile);
@@ -277,7 +306,11 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     // while the tile is loading.
     tile.cycling = true;
     try {
-      await action.setSettings({ provider: next.id } satisfies ActionSettings);
+      await action.setSettings({
+        provider:    next.id,
+        displayMode: tile.displayMode,
+        showTrend:   tile.showTrend ? "yes" : "no",
+      } satisfies ActionSettings);
       await this.showProviderReady(tile, action);
       this.startAutoRefresh(tile, action);
       this.startDisplayRefresh(tile, action);
@@ -322,7 +355,10 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       tile.lastFetchWasError = false;
       this.stopRetryTimer(tile);
       tile.lastSuccessData = { data, providerName: provider.name };
-      await action.setTitle(this.formatSuccess(provider.name, data));
+      await action.setTitle(formatUsageTitle(provider.name, data, {
+        displayMode: tile.displayMode,
+        showTrend:   tile.showTrend,
+      }));
       if (wasInError) {
         // Recovered from an error state — restart the normal refresh cycle.
         this.startAutoRefresh(tile, action);
@@ -333,7 +369,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       LOG(`refreshTile FETCH ERROR: ${String(err)}`);
       tile.lastFetchWasError = true;
       const fe = await this.handleFetchError(action, provider.name, err, suppressAlert);
-      if (fe.kind === "bad-api-key" || fe.kind === "coming-soon") {
+      if (fe.kind === "bad-api-key" || fe.kind === "admin-key-required" || fe.kind === "service-account-invalid" || fe.kind === "coming-soon") {
         // Likely a configuration issue, but could be a temporary API glitch.
         // Stop normal refresh and schedule a retry in 10 min so it auto-recovers
         // without user intervention if the key was just temporarily rejected.
@@ -341,7 +377,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         this.stopDisplayRefresh(tile);
         this.startRetryTimer(tile, action);
         LOG(`refreshTile: retry in 10 min (${fe.kind})`);
-      } else if (fe.kind === "no-api-key") {
+      } else if (fe.kind === "no-api-key" || fe.kind === "service-account-missing") {
         // No key configured — retrying is pointless. Will recover as soon as
         // the user saves a key (onDidReceiveGlobalSettings fires and refreshes).
         this.stopAutoRefresh(tile);
@@ -414,7 +450,14 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       await action.setTitle(title);
       // Flash the yellow ⚠ alert for key errors — but only on manual taps,
       // not when cycling (suppressAlert=true), where the error text is enough.
-      if (!suppressAlert && (fe.kind === "bad-api-key" || fe.kind === "no-api-key" || fe.kind === "coming-soon")) {
+      if (!suppressAlert && (
+        fe.kind === "bad-api-key" ||
+        fe.kind === "admin-key-required" ||
+        fe.kind === "no-api-key" ||
+        fe.kind === "service-account-missing" ||
+        fe.kind === "service-account-invalid" ||
+        fe.kind === "coming-soon"
+      )) {
         await action.showAlert();
       }
     } catch {
@@ -436,82 +479,31 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
   }
 
   // =========================================================================
-  // TITLE FORMATTING
+  // ERROR FORMATTING
   // =========================================================================
-
-  private formatSuccess(name: string, d: UsageData): string {
-    const short = name.length > 7 ? name.slice(0, 6) + "…" : name;
-    const age   = this.timeAgo(d.lastUpdated);
-
-    if (d.unit === "requests") {
-      if (d.dailyTokens === 0) return `${short}\n0 req today\n${age}`;
-      return `${short}\n${d.dailyTokens} req today\n${age}`;
-    }
-
-    if (d.budgetTotal === 0) {
-      // No budget set — show today + month total (4 lines for OpenAI/Claude,
-      // 3 lines for providers without monthly data).
-      if (d.monthlyCost != null) {
-        return `${short}\n${this.dollar(d.dailyCost)} today\n${this.dollar(d.monthlyCost)} /mo\n${age}`;
-      }
-      if (d.dailyCost === 0) return `${short}\n$0 today\n${age}`;
-      return `${short}\n${this.dollar(d.dailyCost)} today\n${age}`;
-    }
-
-    // Budget is set — show remaining + monthly spend + age (4 lines for
-    // OpenAI/Claude, 3 lines for providers without monthly data).
-    if (d.monthlyCost != null) {
-      if (d.budgetRemaining <= 0) {
-        const over = this.dollar(Math.abs(d.budgetRemaining));
-        return `${short}\n⚠ Over limit\n+${over} over\n${age}`;
-      }
-      const pct    = (d.budgetRemaining / d.budgetTotal) * 100;
-      const prefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
-      return `${prefix}${short}\n${this.dollar(d.budgetRemaining)} left\n${this.dollar(d.monthlyCost)} /mo\n${age}`;
-    }
-
-    // 3-line fallback for providers without monthly data (DeepSeek, Gemini).
-    if (d.budgetRemaining <= 0) {
-      const over = this.dollar(Math.abs(d.budgetRemaining));
-      return `${short}\n⚠ Over limit\n+${over} over`;
-    }
-
-    if (d.dailyCost === 0 && d.dailyTokens === 0) {
-      return `${short}\n${this.dollar(d.budgetRemaining)} left\n${age}`;
-    }
-
-    const pct    = (d.budgetRemaining / d.budgetTotal) * 100;
-    const prefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
-    return `${prefix}${short}\n${this.dollar(d.budgetRemaining)} left\n${age}`;
-  }
-
-  /** Format a USD amount safely — guards against NaN/Infinity from bad API data. */
-  private dollar(n: number): string {
-    return `$${(Number.isFinite(n) ? n : 0).toFixed(2)}`;
-  }
 
   private formatError(name: string, err: FetchError): string {
     const short = name.length > 7 ? name.slice(0, 6) + "…" : name;
 
     switch (err.kind) {
       case "no-api-key":    return `${short}\nAdd API key\nin settings`;
+      case "admin-key-required": return `${short}\nAdmin key\nrequired`;
+      case "service-account-missing": return `${short}\nAdd SA file\nin settings`;
+      case "service-account-invalid": {
+        // Show the first ~14 chars of the reason so the tile is diagnostic.
+        const reason = err.message.slice(0, 14);
+        return `${short}\nSA error:\n${reason}`;
+      }
       case "bad-api-key":   return err.status === 403
         ? `${short}\nAdmin key\nin settings`
         : `${short}\nCheck API key\nin settings`;
       case "rate-limited":  return `${short}\nRate limited\nTry later`;
       case "network-error": return `${short}\nOffline?\nCheck network`;
       case "api-error":     return `${short}\nAPI err ${err.status}`;
-      case "coming-soon":   return `${short}\nAdmin key\nin settings`;
+      case "billing-unavailable": return `${short}\nNo billing\nAPI — check console`;
+      case "coming-soon":   return `${short}\nAdmin key req.\nTeam plan only`;
       default:              return `${short}\nError\n${err.message.slice(0, 12)}`;
     }
-  }
-
-  private timeAgo(ts: number): string {
-    const sec = Math.floor((Date.now() - ts) / 1000);
-    if (sec < 60)  return `${sec}s ago`;
-    const min = Math.floor(sec / 60);
-    if (min < 60)  return `${min}m ago`;
-    return `${Math.floor(min / 60)}h ago`;
   }
 
   // =========================================================================
@@ -528,9 +520,16 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
    * onDidReceiveSettings and creates an infinite loop.
    */
   private startAutoRefresh(tile: TileState, action: WillAppearEvent["action"]): void {
-    // Use nullish coalescing so "0" (manual only) is respected, not treated as falsy.
-    const gs   = this.cachedGlobalSettings;
-    const mins = gs.refreshInterval != null ? Number(gs.refreshInterval) : 2;
+    const gs  = this.cachedGlobalSettings;
+    const raw = gs.refreshInterval;
+
+    // "manual" = new explicit off value (sdpi-select saves non-falsy strings reliably).
+    // "0" / 0  = legacy stored value from old installs.
+    // undefined/null = setting never saved → default to 2 min (matches HTML selected).
+    // Number("manual") = NaN, NaN > 0 = false → no timer (correct).
+    const mins = (raw === undefined || raw === null) ? 2 : Number(raw);
+    LOG(`startAutoRefresh: refreshInterval=${JSON.stringify(raw)} → mins=${mins}`);
+
     this.stopAutoRefresh(tile);
     if (mins > 0) {
       tile.refreshTimer = setInterval(() => {
@@ -552,7 +551,10 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       if (tile.fetchInProgress) return;
       if (tile.lastSuccessData) {
         const { data, providerName } = tile.lastSuccessData;
-        this.safeSetTitle(action, this.formatSuccess(providerName, data));
+        this.safeSetTitle(action, formatUsageTitle(providerName, data, {
+          displayMode: tile.displayMode,
+          showTrend:   tile.showTrend,
+        }));
       }
     }, 10_000);
   }

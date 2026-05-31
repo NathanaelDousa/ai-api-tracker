@@ -1,6 +1,6 @@
 # OpenAI Setup
 
-The plugin uses OpenAI's **Organization Costs API** (`/v1/organization/costs`), which returns your actual billed USD amounts per day. This endpoint requires an **Admin key** — a regular project key (`sk-proj-…`) will receive a 403 Forbidden error.
+The plugin uses OpenAI's **Organization Costs API** (`/v1/organization/costs`), which returns your actual billed USD amounts per day. It also reads today's **Usage API** token counts for completions and embeddings so recent activity can be estimated while the cost report catches up. These endpoints require an **Admin key** — a regular project key (`sk-proj-…`) will receive a 403 Forbidden error.
 
 ---
 
@@ -55,6 +55,8 @@ When no budget is set, line 3 shows your total month-to-date spend instead.
 
 ## Why the balance may differ slightly from the platform
 
-The tile calculates remaining balance as **your configured budget minus the spend reported by the Costs API**. OpenAI's Costs API processes usage in batches and typically lags **a few hours** behind real-time billing — so a recent API call may already be deducted from your platform credit balance but not yet reflected in the tile.
+The tile calculates remaining balance as **your configured budget minus the spend reported by the Costs API**, plus a best-effort estimate for today's completion and embedding token usage when that estimate is ahead of the settled cost report. Estimated values are prefixed with `~`.
 
-This is a limitation of OpenAI's API: unlike DeepSeek (which exposes a live `/user/balance` endpoint), OpenAI has no public endpoint that returns your credit balance directly. Small discrepancies of a few cents between the tile and the platform dashboard are expected and will close as the Costs API catches up.
+OpenAI's Costs API processes usage in batches and can lag behind real-time billing. The Usage API is fresher, but it reports usage counts rather than final invoices, so the plugin avoids double-counting by using the settled cost report as the baseline and only adding the live estimate delta while it is higher.
+
+This is still not a live credit-balance endpoint: unlike DeepSeek (which exposes a live `/user/balance` endpoint), OpenAI does not expose your remaining credit balance directly. Small discrepancies between the tile and the platform dashboard are expected and should close as the Costs API catches up.

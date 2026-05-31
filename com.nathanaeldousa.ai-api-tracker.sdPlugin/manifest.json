@@ -34,7 +34,6 @@
       "Icon": "imgs/actions/tracker-icon",
       "PropertyInspectorPath": "ui/tracker-settings.html",
       "SupportedInMultiActions": false,
-      "UserTitleEnabled": false,
       "Tooltip": "Displays remaining AI API balance or monthly usage for the selected provider.",
       "States": [
         {

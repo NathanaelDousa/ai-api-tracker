@@ -3,11 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <title>AI API Tracker</title>
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <script src="sdpi-components.js"></script>
   <style>
     * { box-sizing: border-box; }
 
-    /* ── Section headers ─────────────────────────────────────── */
+    /* Section headers */
     .heading {
       display: flex;
       align-items: center;
@@ -23,17 +25,54 @@
       height: 1px;
       background: #2e2e2e;
     }
+    .heading .bi {
+      font-size: 12px;
+      opacity: 0.75;
+    }
 
-    /* ── Provider sub-labels ─────────────────────────────────── */
-    .provider-label {
+    /* Accordion buttons */
+    .accordion-btn {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 7px;
+      width: 100%;
       font-size: 11px;
       font-weight: 600;
       color: #c0c0c0;
-      padding: 10px 8px 2px;
+      background: none;
+      border: none;
+      border-radius: 3px;
+      padding: 8px 8px;
+      cursor: pointer;
+      text-align: left;
+      -webkit-appearance: none;
+      appearance: none;
+      outline: none;
+      transition: background 0.1s;
     }
+    .accordion-btn:hover { background: rgba(255,255,255,0.04); }
+    .accordion-btn:focus { background: rgba(255,255,255,0.04); }
+    .accordion-btn.open  { background: rgba(255,255,255,0.02); }
+
+    .accordion-icon {
+      margin-left: auto;
+      font-size: 9px;
+      color: #555;
+      line-height: 1;
+      transition: transform 0.15s;
+    }
+    .accordion-btn.open .accordion-icon { transform: rotate(90deg); }
+
+    /* Accordion body */
+    .accordion-body {
+      display: none;
+      padding-bottom: 4px;
+      border-bottom: 1px solid #1e1e1e;
+      margin-bottom: 2px;
+    }
+    .accordion-body.open { display: block; }
+
+    /* Colour dot */
     .dot {
       width: 7px;
       height: 7px;
@@ -41,7 +80,7 @@
       flex-shrink: 0;
     }
 
-    /* ── Callout boxes ───────────────────────────────────────── */
+    /* Callout boxes */
     .callout {
       font-size: 10.5px;
       line-height: 1.55;
@@ -54,7 +93,7 @@
     }
     .callout strong { color: #d4a017; }
 
-    /* ── Helper notes under fields ───────────────────────────── */
+    /* Helper notes */
     .note {
       font-size: 10px;
       color: #5e5e5e;
@@ -62,14 +101,14 @@
       line-height: 1.4;
     }
 
-    /* ── Dividers ────────────────────────────────────────────── */
+    /* Dividers */
     hr {
       border: none;
       border-top: 1px solid #252525;
       margin: 8px 0 2px;
     }
 
-    /* ── Quick-reference table ───────────────────────────────── */
+    /* Quick-reference table */
     .ref-table {
       display: grid;
       grid-template-columns: auto 1fr;
@@ -80,7 +119,7 @@
     .ref-table .k { color: #808080; white-space: nowrap; }
     .ref-table .v { color: #b0b0b0; }
 
-    /* ── Footer ──────────────────────────────────────────────── */
+    /* Footer */
     .footer {
       font-size: 10px;
       color: #404040;
@@ -93,9 +132,7 @@
 </head>
 <body>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!--  Provider (stored per-tile in action settings)              -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- Tile settings (per-tile) -->
 
   <sdpi-item label="Provider">
     <sdpi-select setting="provider" id="provider-select">
@@ -103,108 +140,205 @@
       <option value="claude">Claude (Anthropic)</option>
       <option value="gemini">Gemini (Google)</option>
       <option value="deepseek">DeepSeek</option>
+      <option value="openrouter">OpenRouter</option>
+      <option value="grok">Grok (xAI)</option>
     </sdpi-select>
     <div class="note">Each tile tracks one provider. Hold the key 0.8 s to cycle.</div>
   </sdpi-item>
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!--  API Keys & Budgets (global — shared across all tiles)      -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <sdpi-item label="Display">
+    <sdpi-select setting="displayMode">
+      <option value="standard" selected>Standard (multi-line)</option>
+      <option value="big-remaining">Focus: Balance / remaining</option>
+      <option value="big-monthly">Focus: Monthly spend</option>
+      <option value="big-daily">Focus: Today's spend</option>
+    </sdpi-select>
+    <div class="note">Focus modes show one number large. Useful for a dedicated spend tile.</div>
+  </sdpi-item>
 
-  <div class="heading">🔑 API Keys &amp; Budgets</div>
+  <sdpi-item label="Trend line">
+    <sdpi-select setting="showTrend">
+      <option value="yes" selected>Show</option>
+      <option value="no">Hide</option>
+    </sdpi-select>
+    <div class="note">Shows today vs yesterday on the last line when trend data exists.</div>
+  </sdpi-item>
 
-  <!-- OpenAI ─────────────────────────────────────────────────── -->
-  <div class="provider-label">
+  <!-- API Keys and Budgets (global, shared across all tiles) -->
+
+  <div class="heading">
+    <i class="bi bi-key-fill"></i>
+    API Keys &amp; Budgets
+  </div>
+
+  <!-- OpenAI -->
+  <button class="accordion-btn" id="btn-openai"
+          onclick="toggleSection('openai')" type="button">
     <span class="dot" style="background:#10a37f"></span>
     OpenAI
-  </div>
-  <sdpi-item label="API Key">
-    <sdpi-password setting="openaiApiKey" global placeholder="sk-..."></sdpi-password>
-    <div class="note">Stored locally — only sent to api.openai.com.</div>
-  </sdpi-item>
-  <sdpi-item label="Budget ($)">
-    <sdpi-textfield setting="openaiMonthlyBudget" global
-      placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
-    <div class="note">Monthly budget for remaining-balance display.</div>
-  </sdpi-item>
-  <div class="callout">
-    Requires an <strong>Admin key</strong> — create one at
-    <strong>platform.openai.com/organization/api-keys</strong>
-    (Role → Admin). A regular project key (sk-proj-…) will return a 403 error.
+    <span class="accordion-icon" id="icon-openai">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-openai">
+    <sdpi-item label="API Key">
+      <sdpi-password setting="openaiApiKey" global placeholder="sk-..."></sdpi-password>
+      <div class="note">Stored locally, only sent to api.openai.com.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="openaiMonthlyBudget" global
+        placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
+      <div class="note">Monthly budget for remaining-balance display.</div>
+    </sdpi-item>
+    <div class="callout">
+      Requires an <strong>Admin key</strong>. Create one at
+      <strong>platform.openai.com/organization/api-keys</strong>
+      (Role: Admin). A regular project key (sk-proj-...) will return a 403 error.
+      Recent completion and embedding usage is estimated from token counts until
+      OpenAI's cost report catches up.
+    </div>
   </div>
 
-  <!-- Claude ─────────────────────────────────────────────────── -->
-  <div class="provider-label">
+  <!-- Claude -->
+  <button class="accordion-btn" id="btn-claude"
+          onclick="toggleSection('claude')" type="button">
     <span class="dot" style="background:#d97706"></span>
     Claude (Anthropic)
-  </div>
-  <sdpi-item label="API Key">
-    <sdpi-password setting="claudeApiKey" global placeholder="sk-ant-admin..."></sdpi-password>
-    <div class="note">Stored locally — only sent to api.anthropic.com.</div>
-  </sdpi-item>
-  <sdpi-item label="Budget ($)">
-    <sdpi-textfield setting="claudeMonthlyBudget" global
-      placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
-  </sdpi-item>
-  <div class="callout">
-    Requires an <strong>Admin key</strong> (sk-ant-admin…) —
-    <strong>console.anthropic.com → Settings → Admin keys</strong>.
-    Only available on enterprise/team plans. Standard accounts will see
-    "Admin key required" and auto-refresh stops.
+    <span class="accordion-icon" id="icon-claude">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-claude">
+    <sdpi-item label="API Key">
+      <sdpi-password setting="claudeApiKey" global placeholder="sk-ant-admin..."></sdpi-password>
+      <div class="note">Stored locally, only sent to api.anthropic.com.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="claudeMonthlyBudget" global
+        placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
+    </sdpi-item>
+    <div class="callout">
+      Requires an <strong>Admin key</strong> (sk-ant-admin...) from
+      <strong>console.anthropic.com &gt; Settings &gt; Admin keys</strong>.
+      Only available on <strong>Team / Enterprise</strong> plans. Standard
+      accounts will see "Team plan only" on the tile.
+    </div>
   </div>
 
-  <!-- Gemini ─────────────────────────────────────────────────── -->
-  <div class="provider-label">
+  <!-- Gemini -->
+  <button class="accordion-btn" id="btn-gemini"
+          onclick="toggleSection('gemini')" type="button">
     <span class="dot" style="background:#4285f4"></span>
     Gemini (Google)
-  </div>
-  <sdpi-item label="SA File Path">
-    <sdpi-textfield setting="geminiServiceAccountPath" global
-      placeholder="/Users/you/gemini-sa.json"></sdpi-textfield>
-    <div class="note">Full path to your GCP service account JSON key file.</div>
-  </sdpi-item>
-  <sdpi-item label="GCP Project">
-    <sdpi-textfield setting="geminiProjectId" global
-      placeholder="my-gcp-project-id"></sdpi-textfield>
-    <div class="note">Optional if already embedded in the SA JSON.</div>
-  </sdpi-item>
-  <sdpi-item label="Cost/request ($)">
-    <sdpi-textfield setting="geminiCostPerRequest" global
-      placeholder="e.g. 0.000002" type="number" min="0" step="any"></sdpi-textfield>
-    <div class="note">Optional. Your average cost per API call. When set, the tile shows estimated spend instead of request count. Divide a past bill total by the request count to estimate this value.</div>
-  </sdpi-item>
-  <div class="callout">
-    GCP Console → IAM → Service Accounts → Create →
-    grant <strong>Monitoring Viewer</strong> → Keys → Add Key → JSON.
-    Enable the <strong>Cloud Monitoring API</strong> on your project.
-    By default shows <strong>request count</strong> — set Cost/request above
-    to convert to an estimated spend.
+    <span class="accordion-icon" id="icon-gemini">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-gemini">
+    <sdpi-item label="SA File Path">
+      <sdpi-textfield setting="geminiServiceAccountPath" global
+        placeholder="/Users/you/gemini-sa.json"></sdpi-textfield>
+      <div class="note">Full path to your GCP service account JSON key file.</div>
+    </sdpi-item>
+    <sdpi-item label="GCP Project">
+      <sdpi-textfield setting="geminiProjectId" global
+        placeholder="my-gcp-project-id"></sdpi-textfield>
+      <div class="note">Optional if already embedded in the SA JSON.</div>
+    </sdpi-item>
+    <sdpi-item label="Cost/request ($)">
+      <sdpi-textfield setting="geminiCostPerRequest" global
+        placeholder="e.g. 0.000002" type="number" min="0" step="any"></sdpi-textfield>
+      <div class="note">Optional. Your average cost per API call. When set, the tile
+        shows estimated spend instead of request count.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="geminiMonthlyBudget" global
+        placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
+      <div class="note">Used only when Cost/request is set.</div>
+    </sdpi-item>
+    <div class="callout">
+      GCP Console &gt; IAM &gt; Service Accounts &gt; Create &gt;
+      grant <strong>Monitoring Viewer</strong> &gt; Keys &gt; Add Key &gt; JSON.
+      Enable the <strong>Cloud Monitoring API</strong> on your project.
+      By default shows <strong>successful request count</strong>. Set
+      Cost/request above to convert to an estimated spend.
+    </div>
   </div>
 
-  <!-- DeepSeek ───────────────────────────────────────────────── -->
-  <div class="provider-label">
+  <!-- DeepSeek -->
+  <button class="accordion-btn" id="btn-deepseek"
+          onclick="toggleSection('deepseek')" type="button">
     <span class="dot" style="background:#6366f1"></span>
     DeepSeek
+    <span class="accordion-icon" id="icon-deepseek">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-deepseek">
+    <sdpi-item label="API Key">
+      <sdpi-password setting="deepseekApiKey" global placeholder="sk-..."></sdpi-password>
+      <div class="note">Shows remaining credit balance. CNY is auto-converted to USD.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="deepseekMonthlyBudget" global
+        placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
+      <div class="note">Optional. Leave blank to use your credit balance as the total.</div>
+    </sdpi-item>
+    <sdpi-item label="CNY→USD rate">
+      <sdpi-textfield setting="deepseekCnyToUsdRate" global
+        placeholder="auto" type="number" min="0" step="any"></sdpi-textfield>
+      <div class="note">Optional. Leave blank to fetch a daily exchange rate.</div>
+    </sdpi-item>
   </div>
-  <sdpi-item label="API Key">
-    <sdpi-password setting="deepseekApiKey" global placeholder="sk-..."></sdpi-password>
-    <div class="note">
-      Shows remaining credit balance. CNY is auto-converted to USD.
+
+  <!-- OpenRouter -->
+  <button class="accordion-btn" id="btn-openrouter"
+          onclick="toggleSection('openrouter')" type="button">
+    <span class="dot" style="background:#6d28d9"></span>
+    OpenRouter
+    <span class="accordion-icon" id="icon-openrouter">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-openrouter">
+    <sdpi-item label="API Key">
+      <sdpi-password setting="openrouterApiKey" global placeholder="sk-or-..."></sdpi-password>
+      <div class="note">Stored locally, only sent to openrouter.ai.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="openrouterMonthlyBudget" global
+        placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
+      <div class="note">Only needed if your key has no hard credit limit set.</div>
+    </sdpi-item>
+    <div class="callout">
+      Get your API key at <strong>openrouter.ai/keys</strong>. Shows total
+      credits used and remaining across all models (GPT-4o, Claude, Llama, …).
+      If you set a credit limit on the key, the tile uses that automatically.
     </div>
-  </sdpi-item>
-  <sdpi-item label="Budget ($)">
-    <sdpi-textfield setting="deepseekMonthlyBudget" global
-      placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
-    <div class="note">Optional — leave blank to use your credit balance as the total.</div>
-  </sdpi-item>
+  </div>
+
+  <!-- Grok (xAI) -->
+  <button class="accordion-btn" id="btn-grok"
+          onclick="toggleSection('grok')" type="button">
+    <span class="dot" style="background:#1a1a1a;border:1px solid #444"></span>
+    Grok (xAI)
+    <span class="accordion-icon" id="icon-grok">&#9654;</span>
+  </button>
+  <div class="accordion-body" id="section-grok">
+    <sdpi-item label="API Key">
+      <sdpi-password setting="grokApiKey" global placeholder="xai-..."></sdpi-password>
+      <div class="note">Stored locally, only sent to api.x.ai.</div>
+    </sdpi-item>
+    <sdpi-item label="Budget ($)">
+      <sdpi-textfield setting="grokMonthlyBudget" global
+        placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
+      <div class="note">Only needed if your key has no hard credit limit.</div>
+    </sdpi-item>
+    <div class="callout">
+      Get your API key at <strong>console.x.ai</strong>. Shows total credits
+      used and remaining. If the endpoint returns unexpected data, check the
+      plugin logs — the raw response is logged on first fetch.
+    </div>
+  </div>
 
   <hr />
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!--  Refresh                                                    -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- Settings -->
 
-  <div class="heading">⚙ Settings</div>
+  <div class="heading">
+    <i class="bi bi-gear-fill"></i>
+    Settings
+  </div>
 
   <sdpi-item label="Auto-refresh">
     <sdpi-select setting="refreshInterval" global>
@@ -218,22 +352,65 @@
 
   <hr />
 
-  <!-- ═══════════════════════════════════════════════════════════ -->
-  <!--  Quick reference                                            -->
-  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- Quick reference -->
 
-  <div class="heading">Quick Reference</div>
-
-  <div class="ref-table">
-    <span class="k">Tap</span>         <span class="v">Manual refresh</span>
-    <span class="k">Hold 0.8 s</span>  <span class="v">Cycle provider</span>
-    <span class="k">Auto</span>        <span class="v">Refreshes on interval above</span>
-    <span class="k">⚡ Warning</span>   <span class="v">≤ 25 % of budget remaining</span>
-    <span class="k">⚠ Critical</span>  <span class="v">≤ 10 % of budget remaining</span>
-    <span class="k">Over limit</span>  <span class="v">Budget exceeded — shows overage</span>
+  <div class="heading">
+    <i class="bi bi-info-circle"></i>
+    Quick Reference
   </div>
 
-  <div class="footer">Keys are stored locally and only ever sent to the official provider API.</div>
+  <div class="ref-table">
+    <span class="k">Tap</span>          <span class="v">Manual refresh</span>
+    <span class="k">Hold 0.8 s</span>   <span class="v">Cycle provider</span>
+    <span class="k">Auto</span>         <span class="v">Refreshes on interval above</span>
+    <span class="k">⚡ Warning</span>    <span class="v">25% or less of budget remaining</span>
+    <span class="k">⚠ Critical</span>   <span class="v">10% or less of budget remaining</span>
+    <span class="k">Over limit</span>   <span class="v">Budget exceeded (shows overage)</span>
+    <span class="k">↑ / ↓ trend</span>  <span class="v">Today vs yesterday's spend or requests</span>
+    <span class="k">~ prefix</span>     <span class="v">Best-effort estimated cost</span>
+  </div>
+
+  <div class="footer">Keys are stored locally and only sent to provider APIs. DeepSeek CNY conversion may fetch a public exchange rate unless you set one manually.</div>
+
+  <!-- Accordion logic -->
+  <script>
+    var PROVIDERS = ['openai', 'claude', 'gemini', 'deepseek', 'openrouter', 'grok'];
+
+    function setSection(id, open) {
+      var body = document.getElementById('section-' + id);
+      var btn  = document.getElementById('btn-'     + id);
+      if (!body || !btn) return;
+      body.classList.toggle('open', open);
+      btn.classList.toggle('open',  open);
+    }
+
+    function toggleSection(id) {
+      var body = document.getElementById('section-' + id);
+      if (!body) return;
+      setSection(id, !body.classList.contains('open'));
+    }
+
+    function openForProvider(provider) {
+      if (PROVIDERS.indexOf(provider) !== -1) setSection(provider, true);
+    }
+
+    document.addEventListener('DOMContentLoaded', function () {
+      // Wait for sdpi-components to populate the select value from settings
+      setTimeout(function () {
+        var sel = document.getElementById('provider-select');
+        openForProvider((sel && sel.value) ? sel.value : 'openai');
+      }, 200);
+
+      // Follow provider dropdown changes
+      document.addEventListener('change', function (e) {
+        var el = e.target;
+        while (el && el.id !== 'provider-select') el = el.parentElement;
+        if (!el) return;
+        var val = document.getElementById('provider-select').value;
+        if (val) openForProvider(val);
+      });
+    });
+  </script>
 
 </body>
 </html>

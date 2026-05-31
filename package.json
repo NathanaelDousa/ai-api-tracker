@@ -4,6 +4,7 @@
   "description": "Monitor AI API usage and balances directly from your Stream Deck",
   "type": "module",
   "scripts": {
+    "test": "node --test tests/*.test.mjs",
     "build": "rollup -c && npm run assets && npm run deploy",
     "watch": "rollup -c -w",
     "dev": "rollup -c -w",
