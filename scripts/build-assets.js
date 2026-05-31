@@ -1,48 +1,68 @@
 /**
  * Cross-platform asset builder.
  *
- * macOS  → converts .icns → 144×144 PNG using sips (built-in, no dependencies).
- * Windows/Linux → resizes the fallback .png sources using sharp.
+ * macOS  → .icns via sips, .svg via qlmanage (both built-in, no dependencies).
+ * Windows/Linux → .png/.svg via sharp (optionalDependency).
  *
  * Run via:  npm run assets
  */
 
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, copyFileSync } from "fs";
-import { join, dirname } from "path";
+import { existsSync, mkdirSync, renameSync } from "fs";
+import { join, basename, dirname } from "path";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
-const root    = join(dirname(fileURLToPath(import.meta.url)), "..");
-const pluginId = "com.nathanaeldousa.ai-api-tracker";
-const outDir  = join(root, `${pluginId}.sdPlugin/imgs/providers`);
+const root      = join(dirname(fileURLToPath(import.meta.url)), "..");
+const pluginId  = "com.nathanaeldousa.ai-api-tracker";
+const outDir    = join(root, `${pluginId}.sdPlugin/imgs/providers`);
 mkdirSync(outDir, { recursive: true });
 
-/** Provider icon definitions — ordered by display preference. */
+/**
+ * Provider icon definitions.
+ * Priority: icns > svg > fallback (png).
+ */
 const icons = [
-  { icns: "chatgpt.icns",   fallback: "chatgpt-logo.png",  out: "openai.png"   },
-  { icns: "claude.icns",    fallback: "claude-logo.png",   out: "claude.png"   },
-  { icns: "Gemini.icns",    fallback: "gemini-google.png", out: "gemini.png"   },
-  { icns: "deepseek.icns",  fallback: "deepseek-logo.png", out: "deepseek.png" },
-  // Drop src/assets/openrouter.icns (or openrouter-logo.png) to replace the placeholder.
-  { icns: "openrouter.icns",   fallback: "fallback.png", out: "openrouter.png"  },
-  // Drop src/assets/grok.icns (or grok-logo.png) to replace the placeholder.
-  { icns: "grok.icns",         fallback: "fallback.png", out: "grok.png"        },
+  { icns: "chatgpt.icns",    svg: null,              fallback: "chatgpt-logo.png",  out: "openai.png"    },
+  { icns: "claude.icns",     svg: null,              fallback: "claude-logo.png",   out: "claude.png"    },
+  { icns: "Gemini.icns",     svg: null,              fallback: "gemini-google.png", out: "gemini.png"    },
+  { icns: "deepseek.icns",   svg: null,              fallback: "deepseek-logo.png", out: "deepseek.png"  },
+  { icns: "openrouter.icns", svg: "openrouter.svg",  fallback: "fallback.png",      out: "openrouter.png"},
+  { icns: "grok.icns",       svg: "grok-color.svg",  fallback: "fallback.png",      out: "grok.png"      },
 ];
 
 const isMac = process.platform === "darwin";
 
 if (isMac) {
-  // macOS: use sips (ships with every Mac, no npm dependency needed)
-  for (const { icns, fallback, out } of icons) {
-    const icnsPath     = join(root, "src/assets", icns);
-    const fallbackPath = join(root, "src/assets", fallback);
-    const src = existsSync(icnsPath) ? icnsPath : fallbackPath;
-    const dst = join(outDir, out);
+  for (const { icns, svg, fallback, out } of icons) {
+    const dst      = join(outDir, out);
+    const icnsPath = join(root, "src/assets", icns);
+    const svgPath  = svg ? join(root, "src/assets", svg) : null;
+    const pngPath  = join(root, "src/assets", fallback);
 
-    execSync(`sips -s format png -z 144 144 "${src}" --out "${dst}"`, { stdio: "inherit" });
+    if (existsSync(icnsPath)) {
+      // .icns → PNG via sips
+      execSync(`sips -s format png -z 144 144 "${icnsPath}" --out "${dst}"`, { stdio: "inherit" });
+    } else if (svgPath && existsSync(svgPath)) {
+      // .svg → PNG via qlmanage (QuickLook, ships with every Mac)
+      const tmp = mkdtempSync(join(tmpdir(), "sdicon-"));
+      try {
+        execSync(`qlmanage -t -s 144 -o "${tmp}" "${svgPath}"`, { stdio: "pipe" });
+        const rendered = join(tmp, `${basename(svg)}.png`);
+        renameSync(rendered, dst);
+        console.log(`${svgPath}`);
+        console.log(`  ${dst}`);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    } else {
+      // .png fallback via sips
+      execSync(`sips -s format png -z 144 144 "${pngPath}" --out "${dst}"`, { stdio: "inherit" });
+    }
   }
 } else {
-  // Windows / Linux: use sharp (installed as a devDependency)
+  // Windows / Linux: use sharp (supports icns, png, svg)
   let sharp;
   try {
     const mod = await import("sharp");
@@ -50,22 +70,28 @@ if (isMac) {
   } catch {
     console.error(
       "ERROR: 'sharp' is required on non-macOS to build assets.\n" +
-      "Run: npm install --save-dev sharp"
+      "Run: npm install sharp"
     );
     process.exit(1);
   }
 
-  for (const { fallback, out } of icons) {
-    const src = join(root, "src/assets", fallback);
-    const dst = join(outDir, out);
+  for (const { icns, svg, fallback, out } of icons) {
+    const dst      = join(outDir, out);
+    const icnsPath = join(root, "src/assets", icns);
+    const svgPath  = svg ? join(root, "src/assets", svg) : null;
+    const pngPath  = join(root, "src/assets", fallback);
+
+    const src = existsSync(icnsPath) ? icnsPath
+              : svgPath && existsSync(svgPath) ? svgPath
+              : pngPath;
 
     if (!existsSync(src)) {
-      console.warn(`⚠  No source for ${out} (expected src/assets/${fallback})`);
+      console.warn(`⚠  No source for ${out}`);
       continue;
     }
 
     await sharp(src).resize(144, 144, { fit: "cover" }).png().toFile(dst);
-    console.log(`✓  ${fallback} → ${out}`);
+    console.log(`✓  ${basename(src)} → ${out}`);
   }
 }
 
