@@ -27,17 +27,22 @@ const pluginId  = "com.nathanaeldousa.ai-api-tracker";
 const outDir    = join(root, `${pluginId}.sdPlugin/imgs/providers`);
 mkdirSync(outDir, { recursive: true });
 
+// The app icon PNG lives inside the macOS icon bundle.
+const APP_ICON = "app-icon.icon/Assets/app-icon.png";
+
 /**
  * Provider icon definitions.
  * Priority: icns > svg > fallback (png).
+ * APP_ICON is used as the last-resort fallback for any provider without a
+ * dedicated source file so the tile never shows a generic placeholder.
  */
 const icons = [
-  { icns: "chatgpt.icns",    svg: null,              fallback: "chatgpt-logo.png",  out: "openai.png"    },
-  { icns: "claude.icns",     svg: null,              fallback: "claude-logo.png",   out: "claude.png"    },
-  { icns: "Gemini.icns",     svg: null,              fallback: "gemini-google.png", out: "gemini.png"    },
-  { icns: "deepseek.icns",   svg: null,              fallback: "deepseek-logo.png", out: "deepseek.png"  },
-  { icns: "openrouter.icns", svg: null, fallback: "openrouter.png", out: "openrouter.png" },
-  { icns: "grok.icns",       svg: null, fallback: "grok.png",       out: "grok.png"       },
+  { icns: "chatgpt.icns",    svg: null, fallback: "chatgpt-logo.png",  out: "openai.png"    },
+  { icns: "claude.icns",     svg: null, fallback: "claude-logo.png",   out: "claude.png"    },
+  { icns: "Gemini.icns",     svg: null, fallback: "gemini-google.png", out: "gemini.png"    },
+  { icns: "deepseek.icns",   svg: null, fallback: "deepseek-logo.png", out: "deepseek.png"  },
+  { icns: "openrouter.icns", svg: null, fallback: "openrouter.png",    out: "openrouter.png"},
+  { icns: "grok.icns",       svg: null, fallback: "grok.png",          out: "grok.png"      },
 ];
 
 const isMac = process.platform === "darwin";
@@ -68,8 +73,10 @@ if (isMac) {
       if (svgPath && existsSync(svgPath) && !isSvg(svgPath)) {
         console.warn(`⚠  ${svg} is not a valid SVG file — using fallback`);
       }
-      // .png fallback via sips
-      execSync(`sips -s format png -z 144 144 "${pngPath}" --out "${dst}"`, { stdio: "inherit" });
+      // .png fallback via sips; if the provider PNG is also missing, use the app icon
+      const appIconPath = join(root, "src/assets", APP_ICON);
+      const src = existsSync(pngPath) ? pngPath : appIconPath;
+      execSync(`sips -s format png -z 144 144 "${src}" --out "${dst}"`, { stdio: "inherit" });
     }
   }
 } else {
@@ -92,9 +99,11 @@ if (isMac) {
     const svgPath  = svg ? join(root, "src/assets", svg) : null;
     const pngPath  = join(root, "src/assets", fallback);
 
-    const src = existsSync(icnsPath) ? icnsPath
-              : svgPath && existsSync(svgPath) ? svgPath
-              : pngPath;
+    const appIconPath = join(root, "src/assets", APP_ICON);
+    const src = existsSync(icnsPath)                        ? icnsPath
+              : svgPath && existsSync(svgPath)              ? svgPath
+              : existsSync(pngPath)                         ? pngPath
+              : appIconPath;
 
     if (!existsSync(src)) {
       console.warn(`⚠  No source for ${out}`);
