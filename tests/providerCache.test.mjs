@@ -70,6 +70,57 @@ test("provider cache clears failed in-flight requests", async () => {
   assert.equal(calls, 2);
 });
 
+test("provider cache can be cleared so manual refresh fetches fresh data", async () => {
+  clearProviderCache();
+  let calls = 0;
+  const cached = withProviderCache("openai", async () => {
+    calls++;
+    return {
+      dailyTokens:     0,
+      dailyCost:       calls,
+      budgetTotal:     10,
+      budgetRemaining: 10 - calls,
+      lastUpdated:     Date.now(),
+    };
+  }, 10_000);
+
+  assert.equal((await cached({ openaiApiKey: "one" })).dailyCost, 1);
+  assert.equal((await cached({ openaiApiKey: "one" })).dailyCost, 1);
+
+  clearProviderCache("openai");
+
+  assert.equal((await cached({ openaiApiKey: "one" })).dailyCost, 2);
+  assert.equal(calls, 2);
+});
+
+test("clearing one provider cache leaves other provider caches intact", async () => {
+  clearProviderCache();
+  let openaiCalls = 0;
+  let claudeCalls = 0;
+  const openai = withProviderCache("openai", async () => ({
+    dailyTokens:     0,
+    dailyCost:       ++openaiCalls,
+    budgetTotal:     10,
+    budgetRemaining: 9,
+    lastUpdated:     Date.now(),
+  }), 10_000);
+  const claude = withProviderCache("claude", async () => ({
+    dailyTokens:     0,
+    dailyCost:       ++claudeCalls,
+    budgetTotal:     10,
+    budgetRemaining: 9,
+    lastUpdated:     Date.now(),
+  }), 10_000);
+
+  await openai({ openaiApiKey: "one" });
+  await claude({ claudeApiKey: "one" });
+
+  clearProviderCache("openai");
+
+  assert.equal((await openai({ openaiApiKey: "one" })).dailyCost, 2);
+  assert.equal((await claude({ claudeApiKey: "one" })).dailyCost, 1);
+});
+
 async function importTs(relativePath) {
   const source = await readFile(new URL(relativePath, import.meta.url), "utf8");
   const { outputText } = ts.transpileModule(source, {

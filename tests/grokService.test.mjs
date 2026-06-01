@@ -55,6 +55,8 @@ test("grok: parses flat response shape", async () => {
   const d = await fetchGrokUsage(BASE_SETTINGS);
 
   assert.equal(d.monthlyCost,     3.00);
+  assert.equal(d.spendPeriod,     "total");
+  assert.equal(d.dailyCostUnavailable, true);
   assert.equal(d.budgetTotal,     10.00);
   assert.equal(d.budgetRemaining, 7.00);
 });
@@ -64,6 +66,7 @@ test("grok: parses nested response shape under .data", async () => {
   const d = await fetchGrokUsage(BASE_SETTINGS);
 
   assert.equal(d.monthlyCost,     2.50);
+  assert.equal(d.spendPeriod,     "total");
   assert.equal(d.budgetTotal,     15.00);
   assert.equal(d.budgetRemaining, 12.50);
 });
@@ -81,6 +84,14 @@ test("grok: falls back to configured budget when no limit in response", async ()
 
   assert.equal(d.budgetTotal,     25);
   assert.equal(d.budgetRemaining, 24.00);
+});
+
+test("grok: uses configured dashboard balance when API omits remaining credit", async () => {
+  mockFetch(200, { usage_usd: 1.00 });
+  const d = await fetchGrokUsage({ ...BASE_SETTINGS, grokCreditBalance: 8.75 });
+
+  assert.equal(d.balanceRemaining, 8.75);
+  assert.equal(d.budgetTotal,      0);
 });
 
 test("grok: throws no-api-key when key is absent", async () => {

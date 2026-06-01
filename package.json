@@ -5,11 +5,14 @@
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "build": "rollup -c && npm run assets && npm run deploy",
+    "build:plugin": "rollup -c && npm run assets",
+    "build": "npm run build:plugin && npm run deploy",
     "watch": "rollup -c -w",
     "dev": "rollup -c -w",
     "assets": "node scripts/build-assets.js",
-    "deploy": "pkill -f 'plugin.cjs.*ai-api-tracker' 2>/dev/null; sleep 1; streamdeck restart com.nathanaeldousa.ai-api-tracker && echo 'Deployed to Stream Deck'"
+    "deploy": "pkill -f 'plugin.cjs.*ai-api-tracker' 2>/dev/null; sleep 1; streamdeck restart com.nathanaeldousa.ai-api-tracker && echo 'Deployed to Stream Deck'",
+    "release:stage": "npm run build:plugin && node scripts/prepare-release.js",
+    "release:pack": "npm run release:stage && streamdeck pack dist/release/com.nathanaeldousa.ai-api-tracker.sdPlugin"
   },
   "author": "Nathanael Dousa",
   "license": "MIT",

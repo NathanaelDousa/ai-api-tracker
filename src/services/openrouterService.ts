@@ -4,7 +4,8 @@ import { providerBudget } from "./budget";
 import { normalizeSecret } from "./keyUtils";
 import { recordAndGetTrend } from "./trendStore";
 
-// GET /api/v1/auth/key — returns credit balance and total usage.
+// GET /api/v1/credits returns account credits and total usage.
+// GET /api/v1/key returns per-key usage periods and optional key limits.
 // OpenRouter uses a credit wallet model: you buy credits, spend them across
 // any supported model (GPT-4o, Claude, Llama, Mistral, …), one API key.
 
@@ -13,13 +14,23 @@ const BASE_URL = "https://openrouter.ai";
 interface OpenRouterKeyResponse {
   data: {
     label:        string;
-    usage:        number;        // total credits used (USD)
-    limit:        number | null; // credit limit; null = no hard limit
+    usage:        number;        // total key usage (USD)
+    usage_daily?: number;        // current UTC day usage
+    usage_monthly?: number;      // current UTC month usage
+    limit:        number | null; // key credit limit; null = no hard limit
+    limit_remaining?: number | null;
     is_free_tier: boolean;
     rate_limit: {
       requests: number;
       interval: string;
     };
+  };
+}
+
+interface OpenRouterCreditsResponse {
+  data: {
+    total_credits: number;
+    total_usage: number;
   };
 }
 
@@ -31,9 +42,52 @@ export async function fetchOpenRouterUsage(gs: GlobalSettings): Promise<UsageDat
     throw { kind: "no-api-key" } satisfies FetchError;
   }
 
+  const [credits, keyInfo] = await Promise.all([
+    fetchJson<OpenRouterCreditsResponse>(apiKey, `${BASE_URL}/api/v1/credits`),
+    fetchKeyInfoSafely(apiKey),
+  ]);
+
+  const totalCredits = positive(credits.data.total_credits);
+  const totalUsage   = positive(credits.data.total_usage);
+  const remaining    = Math.max(0, totalCredits - totalUsage);
+  const monthlyUsage = keyInfo?.data.usage_monthly;
+  const dailyUsage   = keyInfo?.data.usage_daily;
+  const shownUsage   = monthlyUsage != null ? positive(monthlyUsage) : totalUsage;
+
+  streamDeck.logger.info(
+    `[OpenRouter] credits=$${totalCredits.toFixed(4)} totalUsage=$${totalUsage.toFixed(4)} ` +
+    `monthly=$${shownUsage.toFixed(4)} remaining=$${remaining.toFixed(4)}`,
+  );
+
+  const trend = recordAndGetTrend("openrouter:usd", round2(dailyUsage ?? 0));
+
+  return {
+    dailyTokens:     0,
+    dailyCost:       round2(dailyUsage ?? 0),
+    dailyCostUnavailable: dailyUsage == null ? true : undefined,
+    monthlyCost:     round2(shownUsage),
+    spendPeriod:     monthlyUsage != null ? "month" : "total",
+    balanceRemaining: budget > 0 ? undefined : round2(remaining),
+    trend,
+    budgetTotal:     budget,
+    budgetRemaining: budget > 0 ? round2(budget - shownUsage) : 0,
+    lastUpdated:     Date.now(),
+  };
+}
+
+async function fetchKeyInfoSafely(apiKey: string): Promise<OpenRouterKeyResponse | null> {
+  try {
+    return await fetchJson<OpenRouterKeyResponse>(apiKey, `${BASE_URL}/api/v1/key`);
+  } catch (err: unknown) {
+    streamDeck.logger.warn(`[OpenRouter] key usage unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+async function fetchJson<T>(apiKey: string, url: string): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${BASE_URL}/api/v1/auth/key`, {
+    response = await fetch(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       signal:  AbortSignal.timeout(10_000),
     });
@@ -54,33 +108,12 @@ export async function fetchOpenRouterUsage(gs: GlobalSettings): Promise<UsageDat
     throw { kind: "api-error", status: response.status } satisfies FetchError;
   }
 
-  const { data } = await response.json() as OpenRouterKeyResponse;
+  return response.json() as Promise<T>;
+}
 
-  const usage     = data.usage  ?? 0;
-  const apiLimit  = data.limit;
-
-  // Prefer the API-reported credit limit as the budget ceiling.
-  // Fall back to user-configured budget if no hard limit is set.
-  const total     = apiLimit != null ? apiLimit : budget;
-  const remaining = apiLimit != null ? Math.max(0, apiLimit - usage) : Math.max(0, budget - usage);
-
-  streamDeck.logger.info(
-    `[OpenRouter] usage=$${usage.toFixed(4)} limit=${apiLimit ?? "none"} remaining=$${remaining.toFixed(4)}`,
-  );
-
-  const trend = recordAndGetTrend("openrouter:usd", usage);
-
-  // OpenRouter has no daily breakdown — show total spend as the primary cost
-  // figure so the tile reads "X.XX used" rather than "$0.00 today / $X.XX /mo".
-  return {
-    dailyTokens:     0,
-    dailyCost:       round2(usage),
-    monthlyCost:     total > 0 ? round2(usage) : undefined,
-    trend,
-    budgetTotal:     total,
-    budgetRemaining: round2(remaining),
-    lastUpdated:     Date.now(),
-  };
+function positive(n: unknown): number {
+  const value = Number(n);
+  return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
 function round2(n: number): number { return Math.round(n * 100) / 100; }

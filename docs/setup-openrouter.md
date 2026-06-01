@@ -1,6 +1,6 @@
 # OpenRouter setup
 
-OpenRouter is an API aggregator that lets you access models from OpenAI, Anthropic, Google, Meta, Mistral, and many more through a single API key and a single bill. The AI API Tracker tile shows your total credits used and how many remain.
+OpenRouter is an API aggregator that lets you access models from OpenAI, Anthropic, Google, Meta, Mistral, and many more through a single API key and a single bill. The AI API Tracker tile reads account credits automatically and shows how much credit remains.
 
 ---
 
@@ -8,7 +8,7 @@ OpenRouter is an API aggregator that lets you access models from OpenAI, Anthrop
 
 1. Go to [openrouter.ai/keys](https://openrouter.ai/keys) and sign in.
 2. Click **Create key**.
-3. Optionally set a **credit limit** — if you do, the tile will use that as the budget ceiling automatically (no manual budget setting needed).
+3. Optionally set a **credit limit** if you want OpenRouter to enforce spending for that key.
 4. Copy the key (starts with `sk-or-`).
 
 ---
@@ -18,7 +18,7 @@ OpenRouter is an API aggregator that lets you access models from OpenAI, Anthrop
 1. Drag an **API Tracker** tile onto your Stream Deck layout.
 2. Open the property inspector and select **OpenRouter** from the Provider dropdown.
 3. Paste your API key into the **API Key** field.
-4. **Budget ($)** — only needed if your key has no hard credit limit set. Enter the amount of credits you want to track against.
+4. **Budget ($)** — optional. When set, the tile shows budget remaining instead of account credit remaining.
 
 ---
 
@@ -27,8 +27,8 @@ OpenRouter is an API aggregator that lets you access models from OpenAI, Anthrop
 | Line | Content |
 |------|---------|
 | Provider name | OpenRouter |
-| Credits used | Total spend across all models since your last credit purchase |
-| Credits remaining | Hard limit minus used, or budget minus used if no hard limit |
+| Credits remaining | Account credits minus total usage, or budget remaining when Budget is set |
+| Usage | Daily/monthly usage when OpenRouter returns it, otherwise total usage |
 | Trend | ↑ / ↓ / → vs yesterday's spend |
 
 ---

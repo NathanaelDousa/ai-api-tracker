@@ -1,7 +1,8 @@
 import streamDeck from "@elgato/streamdeck";
 import type { UsageData, FetchError, GlobalSettings } from "./types";
-import { providerBudget } from "./budget";
+import { configuredBalance, providerBudget } from "./budget";
 import { isClaudeAdminKey, normalizeSecret } from "./keyUtils";
+import { buildClaudeReportWindow } from "./reportWindows";
 import { recordAndGetTrend } from "./trendStore";
 
 // GET /v1/organizations/cost_report — requires an Admin API key.
@@ -55,6 +56,7 @@ interface UsageReportResponse {
 export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = normalizeSecret(gs.claudeApiKey);
   const budget = providerBudget(gs, "claudeMonthlyBudget");
+  const dashboardBalance = configuredBalance(gs, "claudeCreditBalance");
 
   if (!apiKey) {
     throw { kind: "no-api-key" } satisfies FetchError;
@@ -67,21 +69,17 @@ export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
     throw { kind: "admin-key-required" } satisfies FetchError;
   }
 
-  const now        = new Date();
-  const startOfMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
-  const startingAt   = new Date(startOfMonth).toISOString();
-  // Cost report validates at day granularity — ensure end is on a different
-  // calendar date from start (same fix as OpenAI costs endpoint).
-  const endMs      = Math.max(now.getTime(), startOfMonth + 86_400_000);
-  const endingAt   = new Date(endMs).toISOString();
-  const todayStr   = now.toISOString().slice(0, 10);
+  const window = buildClaudeReportWindow();
 
-  const costReport = await fetchCostReport(apiKey, startingAt, endingAt, todayStr);
-  const usageReport = await fetchMessagesUsageSafely(apiKey, startingAt, endingAt, todayStr);
+  const costReport = await fetchCostReport(apiKey, window);
+  const usageReport = await fetchMessagesUsageSafely(apiKey, window);
 
   streamDeck.logger.info(
     `[Claude] costPages=${costReport.pages} usagePages=${usageReport.pages} monthlyCost=${costReport.monthlyCost.toFixed(4)} dailyCost=${costReport.dailyCost.toFixed(4)} dailyTokens=${usageReport.dailyTokens}`,
   );
+  if (budget === 0 && dashboardBalance != null) {
+    streamDeck.logger.info(`[Claude] using configured dashboard balance=$${dashboardBalance.toFixed(2)}`);
+  }
 
   const trend = recordAndGetTrend("claude", round3(costReport.dailyCost));
 
@@ -90,6 +88,7 @@ export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
     dailyCost:       round3(costReport.dailyCost),
     monthlyCost:     round2(costReport.monthlyCost),
     trend,
+    balanceRemaining: budget > 0 ? undefined : dashboardBalance ?? undefined,
     budgetTotal:     budget,
     budgetRemaining: round2(budget - costReport.monthlyCost),
     lastUpdated:     Date.now(),
@@ -98,9 +97,7 @@ export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
 
 async function fetchCostReport(
   apiKey: string,
-  startingAt: string,
-  endingAt: string,
-  todayStr: string,
+  window: ReturnType<typeof buildClaudeReportWindow>,
 ): Promise<{ monthlyCost: number; dailyCost: number; pages: number }> {
   let monthlyCost = 0;
   let dailyCost = 0;
@@ -110,8 +107,8 @@ async function fetchCostReport(
   do {
     const url =
       `${BASE_URL}/v1/organizations/cost_report` +
-      `?starting_at=${encodeURIComponent(startingAt)}` +
-      `&ending_at=${encodeURIComponent(endingAt)}` +
+      `?starting_at=${encodeURIComponent(window.startingAt)}` +
+      `&ending_at=${encodeURIComponent(window.endingAt)}` +
       `&bucket_width=1d` +
       `&limit=31` +
       (pageToken ? `&page=${encodeURIComponent(pageToken)}` : "");
@@ -121,10 +118,13 @@ async function fetchCostReport(
 
     for (const bucket of page.data) {
       const bucketDate = bucket.starting_at.slice(0, 10);
+      if (bucketDate < window.monthStartDate || bucketDate > window.todayDate) {
+        continue;
+      }
       for (const result of (bucket.results ?? [])) {
         const dollars = (parseFloat(result.amount) || 0) / 100;
         monthlyCost += dollars;
-        if (bucketDate === todayStr) {
+        if (bucketDate === window.todayDate) {
           dailyCost += dollars;
         }
       }
@@ -139,12 +139,10 @@ async function fetchCostReport(
 
 async function fetchMessagesUsageSafely(
   apiKey: string,
-  startingAt: string,
-  endingAt: string,
-  todayStr: string,
+  window: ReturnType<typeof buildClaudeReportWindow>,
 ): Promise<{ dailyTokens: number; pages: number }> {
   try {
-    return await fetchMessagesUsage(apiKey, startingAt, endingAt, todayStr);
+    return await fetchMessagesUsage(apiKey, window);
   } catch (err: unknown) {
     streamDeck.logger.warn(`[Claude] usage_report unavailable: ${err instanceof Error ? err.message : String(err)}`);
     return { dailyTokens: 0, pages: 0 };
@@ -153,9 +151,7 @@ async function fetchMessagesUsageSafely(
 
 async function fetchMessagesUsage(
   apiKey: string,
-  startingAt: string,
-  endingAt: string,
-  todayStr: string,
+  window: ReturnType<typeof buildClaudeReportWindow>,
 ): Promise<{ dailyTokens: number; pages: number }> {
   let dailyTokens = 0;
   let pageToken: string | null = null;
@@ -164,8 +160,8 @@ async function fetchMessagesUsage(
   do {
     const url =
       `${BASE_URL}/v1/organizations/usage_report/messages` +
-      `?starting_at=${encodeURIComponent(startingAt)}` +
-      `&ending_at=${encodeURIComponent(endingAt)}` +
+      `?starting_at=${encodeURIComponent(window.startingAt)}` +
+      `&ending_at=${encodeURIComponent(window.endingAt)}` +
       `&bucket_width=1d` +
       `&limit=31` +
       (pageToken ? `&page=${encodeURIComponent(pageToken)}` : "");
@@ -173,7 +169,7 @@ async function fetchMessagesUsage(
     const page = await fetchUsagePage(apiKey, url);
     for (const bucket of page.data) {
       const bucketDate = bucket.starting_at.slice(0, 10);
-      if (bucketDate !== todayStr) continue;
+      if (bucketDate !== window.todayDate) continue;
       for (const result of (bucket.results ?? [])) {
         dailyTokens += positive(result.uncached_input_tokens);
         dailyTokens += positive(result.cache_read_input_tokens);

@@ -12,9 +12,13 @@ export interface UsageData {
   dailyTokens: number;
   /** Estimated USD cost for today's usage */
   dailyCost: number;
-  /** Month-to-date spend in USD. Undefined for balance-based providers (DeepSeek)
-   *  or when the provider doesn't expose monthly data (Gemini). */
+  /** True when the provider does not expose a daily spend reading. */
+  dailyCostUnavailable?: boolean;
+  /** Month-to-date spend in USD, or total usage when spendPeriod is "total".
+   *  Undefined when the provider doesn't expose this data. */
   monthlyCost?: number;
+  /** What period monthlyCost represents. Defaults to "month". */
+  spendPeriod?: "month" | "total";
   /** Month-to-date request/token count for request-based providers (Gemini without
    *  a cost/request setting). Parallel to dailyTokens. */
   monthlyTokens?: number;
@@ -23,6 +27,8 @@ export interface UsageData {
   trend?: number;
   /** True when displayed spend includes a best-effort live estimate. */
   isEstimate?: boolean;
+  /** Live/prepaid credit balance when a provider exposes or reports one. */
+  balanceRemaining?: number;
   /** User-configured monthly budget (USD) */
   budgetTotal: number;
   /** Budget minus estimated spend (best-effort, may be zero) */
@@ -91,7 +97,13 @@ export interface ProviderConfig {
 
 export type GlobalSettings = Record<string, unknown> & {
   openaiApiKey?: string;
+  /** Optional manual dashboard balance. OpenAI does not expose credit balance
+   *  through the Admin API, so this is used when no budget is configured. */
+  openaiCreditBalance?: number;
   claudeApiKey?: string;
+  /** Optional manual dashboard balance. Anthropic Admin API exposes usage/cost,
+   *  but not prepaid credit balance. */
+  claudeCreditBalance?: number;
   /** Imported service account JSON from the property inspector file picker.
    *  Kept locally in Stream Deck global settings, like provider API keys. */
   geminiServiceAccountJson?: string;
@@ -117,6 +129,7 @@ export type GlobalSettings = Record<string, unknown> & {
   openrouterApiKey?: string;
   openrouterMonthlyBudget?: number;
   grokApiKey?: string;
+  grokCreditBalance?: number;
   grokMonthlyBudget?: number;
   refreshInterval?: number | string;
 };

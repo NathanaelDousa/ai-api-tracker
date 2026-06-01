@@ -1,7 +1,8 @@
 import streamDeck from "@elgato/streamdeck";
 import type { UsageData, FetchError, GlobalSettings } from "./types";
-import { providerBudget } from "./budget";
+import { configuredBalance, providerBudget } from "./budget";
 import { normalizeSecret } from "./keyUtils";
+import { parseOpenAICreditBalance } from "./openaiBalance";
 import {
   estimateCompletionUsage,
   estimateEmbeddingUsage,
@@ -18,6 +19,7 @@ import { recordAndGetTrend } from "./trendStore";
 // live estimate until the Costs API catches up.
 
 const MAX_PAGES = 10;
+const CREDIT_GRANTS_URL = "https://api.openai.com/dashboard/billing/credit_grants";
 
 interface CostAmount {
   value:    number;
@@ -74,6 +76,7 @@ interface LiveUsageEstimate {
 export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = normalizeSecret(gs.openaiApiKey);
   const budget = providerBudget(gs, "openaiMonthlyBudget");
+  const dashboardBalance = configuredBalance(gs, "openaiCreditBalance");
 
   if (!apiKey) {
     throw { kind: "no-api-key" } satisfies FetchError;
@@ -131,7 +134,10 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
     `[OpenAI] settledMonthlyCost=$${settledMonthlyCost.toFixed(4)} settledDailyCost=$${settledDailyCost.toFixed(4)} budget=$${budget}`,
   );
 
-  const liveEstimate = await fetchLiveUsageEstimateSafely(apiKey, todayTs, nowTs);
+  const [liveEstimate, platformBalance] = await Promise.all([
+    fetchLiveUsageEstimateSafely(apiKey, todayTs, nowTs),
+    budget > 0 || dashboardBalance != null ? Promise.resolve(null) : fetchCreditBalanceSafely(apiKey),
+  ]);
   const overlay = overlayLiveEstimateOnSettledCosts(
     settledDailyCost,
     settledMonthlyCost,
@@ -151,6 +157,9 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
       streamDeck.logger.warn(`[OpenAI] live estimate notes: ${liveEstimate.notes.join("; ")}`);
     }
   }
+  if (budget === 0 && dashboardBalance != null) {
+    streamDeck.logger.info(`[OpenAI] using configured dashboard balance=$${dashboardBalance.toFixed(2)}`);
+  }
 
   const trend = recordAndGetTrend("openai", round3(overlay.dailyCost));
 
@@ -160,10 +169,46 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
     monthlyCost:     round2(overlay.monthlyCost),
     trend,
     isEstimate:      overlay.isEstimate ? true : undefined,
+    balanceRemaining: (platformBalance ?? dashboardBalance) ?? undefined,
     budgetTotal:     budget,
-    budgetRemaining: round2(budget - overlay.monthlyCost),
+    budgetRemaining: budget > 0 ? round2(budget - overlay.monthlyCost) : 0,
     lastUpdated:     Date.now(),
   };
+}
+
+async function fetchCreditBalanceSafely(apiKey: string): Promise<number | null> {
+  try {
+    const balance = await fetchCreditBalance(apiKey);
+    if (balance != null) {
+      streamDeck.logger.info(`[OpenAI] platform credit balance=$${balance.toFixed(2)}`);
+    }
+    return balance;
+  } catch (err: unknown) {
+    streamDeck.logger.warn(
+      `[OpenAI] credit balance unavailable; showing spend only: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return null;
+  }
+}
+
+async function fetchCreditBalance(apiKey: string): Promise<number | null> {
+  let response: Response;
+  try {
+    response = await fetch(CREDIT_GRANTS_URL, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal:  AbortSignal.timeout(10_000),
+    });
+  } catch (err: unknown) {
+    throw new Error(err instanceof Error ? err.message : String(err));
+  }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "(unreadable)");
+    throw new Error(`HTTP ${response.status}: ${body.slice(0, 160)}`);
+  }
+
+  const payload = await response.json();
+  return parseOpenAICreditBalance(payload);
 }
 
 async function fetchPage(apiKey: string, url: string): Promise<OrgCostsResponse> {

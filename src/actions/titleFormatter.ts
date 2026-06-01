@@ -17,66 +17,52 @@ export function formatUsageTitle(name: string, d: UsageData, options: TitleForma
   // Stream Deck auto-sizes text, so fewer lines = larger font.
   if (displayMode === "big-remaining") {
     if (d.unit === "requests") return `${short}\n${compactCount(d.monthlyTokens ?? d.dailyTokens)} /mo`;
-    if (d.budgetTotal > 0)     return `${short}\n${estimatePrefix}${dollar(d.budgetRemaining)} left`;
-    if (d.monthlyCost != null) return `${short}\n${estimatePrefix}${dollar(d.monthlyCost)} /mo`;
-    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today`;
+    return `${short}\n${remainingLine(d, estimatePrefix)}`;
   }
   if (displayMode === "big-monthly") {
     if (d.unit === "requests") return `${short}\n${compactCount(d.monthlyTokens ?? d.dailyTokens)} /mo`;
-    if (d.monthlyCost != null) return `${short}\n${estimatePrefix}${dollar(d.monthlyCost)} /mo`;
-    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today`;
+    return `${short}\n${estimatePrefix}${spendAmount(d)}`;
   }
   if (displayMode === "big-daily") {
     if (d.unit === "requests") return `${short}\n${compactCount(d.dailyTokens)} req`;
-    if (d.dailyCost > 0)       return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today`;
-    if (d.budgetTotal > 0)     return `${short}\n${estimatePrefix}${dollar(d.budgetRemaining)} left`;
-    return `${short}\n${estimatePrefix}${dollar(d.monthlyCost ?? 0)} /mo`;
+    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today`;
   }
 
   const lastLine = showTrend ? trendLine(d, now) : age;
 
   if (d.unit === "requests") {
     const todayStr = `${compactCount(d.dailyTokens)} req today`;
-    if (d.monthlyTokens != null) {
-      return `${short}\n${todayStr}\n${compactCount(d.monthlyTokens)} /mo\n${lastLine}`;
-    }
-    return `${short}\n${todayStr}\n${lastLine}`;
+    return `${short}\n${todayStr}\n${compactCount(d.monthlyTokens ?? 0)} /mo\n${lastLine}`;
   }
 
-  if (d.budgetTotal === 0) {
-    // No budget configured — show spend, not budget remaining.
-    if (d.monthlyCost != null) {
-      const monthLine = `${estimatePrefix}${dollar(d.monthlyCost)} /mo`;
-      // Only add a "today" sub-line when it's a useful extra (different from monthly).
-      const todayUseful = d.dailyCost > 0.001 && Math.abs(d.dailyCost - d.monthlyCost) > 0.001;
-      return todayUseful
-        ? `${short}\n${monthLine}\n${estimatePrefix}${dollar(d.dailyCost)} today\n${lastLine}`
-        : `${short}\n${monthLine}\n${lastLine}`;
-    }
-    if (d.dailyCost === 0) return `${short}\n$0.00 spent\n${lastLine}`;
-    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} spent\n${lastLine}`;
-  }
+  return `${statusPrefix(d)}${short}\n${remainingLine(d, estimatePrefix)}\n${estimatePrefix}${spendAmount(d)}\n${lastLine}`;
+}
 
-  if (d.monthlyCost != null) {
-    if (d.budgetRemaining <= 0) {
-      const over = dollar(Math.abs(d.budgetRemaining));
-      return `${short}\n⚠ Over limit\n+${over} over\n${lastLine}`;
-    }
-    const pct = (d.budgetRemaining / d.budgetTotal) * 100;
-    const statusPrefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
-    return `${statusPrefix}${short}\n${estimatePrefix}${dollar(d.budgetRemaining)} left\n${estimatePrefix}${dollar(d.monthlyCost)} /mo\n${lastLine}`;
-  }
+function remainingLine(d: UsageData, estimatePrefix: string): string {
+  if (!hasKnownRemaining(d)) return `${estimatePrefix}${dollar(d.dailyCost)} today`;
+  return `${estimatePrefix}${dollar(remainingAmount(d))} left`;
+}
 
-  if (d.budgetRemaining <= 0) {
-    const over = dollar(Math.abs(d.budgetRemaining));
-    return `${short}\n⚠ Over limit\n+${over} over`;
-  }
-  if (d.dailyCost === 0 && d.dailyTokens === 0) {
-    return `${short}\n${estimatePrefix}${dollar(d.budgetRemaining)} left\n${lastLine}`;
-  }
-  const pct = (d.budgetRemaining / d.budgetTotal) * 100;
-  const statusPrefix = pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
-  return `${statusPrefix}${short}\n${estimatePrefix}${dollar(d.budgetRemaining)} left\n${lastLine}`;
+function remainingAmount(d: UsageData): number {
+  if (d.balanceRemaining != null) return Math.max(0, d.balanceRemaining);
+  if (d.budgetTotal > 0) return Math.max(0, d.budgetRemaining);
+  return 0;
+}
+
+function hasKnownRemaining(d: UsageData): boolean {
+  return d.balanceRemaining != null || d.budgetTotal > 0;
+}
+
+function statusPrefix(d: UsageData): string {
+  if (d.budgetTotal <= 0) return "";
+  const pct = (remainingAmount(d) / d.budgetTotal) * 100;
+  return pct <= 10 ? "⚠ " : pct <= 25 ? "⚡ " : "";
+}
+
+function spendAmount(d: UsageData): string {
+  const cost = d.monthlyCost ?? 0;
+  const suffix = d.spendPeriod === "total" ? "used" : "/mo";
+  return `${dollar(cost)} ${suffix}`;
 }
 
 function trendLine(d: UsageData, now: number): string {

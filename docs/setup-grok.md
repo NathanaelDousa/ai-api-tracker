@@ -1,6 +1,6 @@
 # Grok (xAI) setup
 
-Grok is xAI's family of AI models. The AI API Tracker tile shows your total credits used and how many remain on your xAI account.
+Grok is xAI's family of AI models. The AI API Tracker tile shows API key usage. If xAI does not return remaining credit for your account, you can enter the dashboard balance manually.
 
 ---
 
@@ -17,7 +17,8 @@ Grok is xAI's family of AI models. The AI API Tracker tile shows your total cred
 1. Drag an **API Tracker** tile onto your Stream Deck layout.
 2. Open the property inspector and select **Grok (xAI)** from the Provider dropdown.
 3. Paste your API key into the **API Key** field.
-4. **Budget ($)** — enter your credit limit if you want the tile to show remaining balance. If your key already has a hard limit configured in the xAI console, the tile picks it up automatically.
+4. *(Optional)* **Budget ($)** — enter the amount you want to track against.
+5. *(Optional)* **Balance ($)** — paste the xAI dashboard balance if xAI's API response does not include remaining credit.
 
 ---
 
@@ -26,8 +27,8 @@ Grok is xAI's family of AI models. The AI API Tracker tile shows your total cred
 | Line | Content |
 |------|---------|
 | Provider name | Grok |
-| Credits used | Total spend on the account |
-| Credits remaining | Limit minus used, or budget minus used if no hard limit |
+| Usage | Total API key usage reported by xAI |
+| Remaining | Budget remaining, API-reported remaining credit, or manually entered Balance |
 | Trend | ↑ / ↓ / → vs yesterday's spend |
 
 ---
@@ -45,4 +46,4 @@ Grok is xAI's family of AI models. The AI API Tracker tile shows your total cred
 
 ## Note on the billing endpoint
 
-The tile reads credit data from xAI's `/v1/api-key` endpoint. This is an undocumented endpoint that was available at time of writing — if xAI changes it, the tile will show an API error and an update to the plugin will be needed.
+The tile reads API key data from xAI's `/v1/api-key` endpoint. Some xAI responses include usage but not remaining balance; in that case, use the optional Balance field. If xAI changes the endpoint, the tile may show an API error and a plugin update may be needed.

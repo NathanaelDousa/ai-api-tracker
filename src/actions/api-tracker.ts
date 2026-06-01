@@ -11,6 +11,7 @@ import streamDeck, {
 } from "@elgato/streamdeck";
 import type { UsageData, FetchError, ActionSettings, GlobalSettings } from "../services/types";
 import { getProvider, DEFAULT_PROVIDER_ID, ALL_PROVIDERS } from "../services/providerRegistry";
+import { clearProviderCache } from "../services/providerCache";
 import { formatUsageTitle } from "./titleFormatter";
 
 const LOG = (msg: string) => streamDeck.logger.info(`[AI Tracker] ${msg}`);
@@ -31,6 +32,7 @@ interface TileState {
    *  temporary API hiccups auto-recover without user intervention. */
   retryTimer:   ReturnType<typeof setTimeout>  | null;
   currentProviderId: string;
+  providerRevision: number;
   lastSuccessData: { data: UsageData; providerName: string } | null;
   fetchInProgress: boolean;
   displayMode: string;
@@ -106,6 +108,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         displayTimer:      null,
         retryTimer:        null,
         currentProviderId: DEFAULT_PROVIDER_ID,
+        providerRevision:  0,
         lastSuccessData:   null,
         fetchInProgress:   false,
         lastFetchWasError: false,
@@ -202,7 +205,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
         await this.cycleProvider(tile, action);
       } else {
         await action.setTitle("Checking...");
-        await this.refreshTile(tile, action);
+        await this.refreshTile(tile, action, false, true);
       }
       LOG("onKeyUp END");
     } catch (err: unknown) {
@@ -249,6 +252,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
 
       if (providerChanged) {
         tile.currentProviderId = newProvider;
+        tile.providerRevision += 1;
         tile.lastSuccessData   = null;
         tile.lastFetchWasError = false;
         await this.showProviderReady(tile, action);
@@ -296,6 +300,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
     const idx  = ALL_PROVIDERS.findIndex(p => p.id === tile.currentProviderId);
     const next = ALL_PROVIDERS[(idx + 1) % ALL_PROVIDERS.length];
     tile.currentProviderId = next.id;
+    tile.providerRevision += 1;
     tile.lastSuccessData   = null;
     tile.lastFetchWasError = false;
 
@@ -330,7 +335,12 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
   // TILE REFRESH
   // =========================================================================
 
-  private async refreshTile(tile: TileState, action: WillAppearEvent["action"], suppressAlert = false): Promise<void> {
+  private async refreshTile(
+    tile: TileState,
+    action: WillAppearEvent["action"],
+    suppressAlert = false,
+    forceFresh = false,
+  ): Promise<void> {
     LOG(`refreshTile START (provider=${tile.currentProviderId})`);
 
     const provider = getProvider(tile.currentProviderId);
@@ -346,11 +356,21 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       return;
     }
 
+    if (forceFresh) {
+      clearProviderCache(provider.id);
+      LOG(`refreshTile: bypassing cache for manual refresh (${provider.id})`);
+    }
+
+    const providerRevision = tile.providerRevision;
     await this.safeSetImage(action, provider.iconPath);
 
     tile.fetchInProgress = true;
     try {
       const data = await provider.fetcher(this.cachedGlobalSettings);
+      if (tile.currentProviderId !== provider.id || tile.providerRevision !== providerRevision) {
+        LOG(`refreshTile STALE RESULT ignored (${provider.id} → ${tile.currentProviderId})`);
+        return;
+      }
       const wasInError = tile.lastFetchWasError;
       tile.lastFetchWasError = false;
       this.stopRetryTimer(tile);
@@ -366,6 +386,10 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
       }
       LOG("refreshTile END (success)");
     } catch (err: unknown) {
+      if (tile.currentProviderId !== provider.id || tile.providerRevision !== providerRevision) {
+        LOG(`refreshTile STALE ERROR ignored (${provider.id} → ${tile.currentProviderId})`);
+        return;
+      }
       LOG(`refreshTile FETCH ERROR: ${String(err)}`);
       tile.lastFetchWasError = true;
       const fe = await this.handleFetchError(action, provider.name, err, suppressAlert);

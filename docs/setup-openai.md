@@ -27,13 +27,14 @@ The plugin uses OpenAI's **Organization Costs API** (`/v1/organization/costs`), 
 1. Click your **API Tracker** tile in the Stream Deck app.
 2. In the property inspector, scroll to the **OpenAI** section.
 3. Paste the key into the **API Key** field.
-4. *(Optional)* Enter a **Budget ($)** — the tile will show how much budget remains for the month.
+4. *(Optional)* Enter a **Budget ($)** — the tile will show budget minus month-to-date usage.
+5. *(Optional)* Enter **Balance ($)** from the OpenAI billing dashboard. OpenAI currently blocks this credit-balance value from Admin API keys, so this field is the reliable way to show your dashboard balance on the tile when Budget is blank.
 
 ---
 
 ## Step 3 — Verify it works
 
-Tap the tile once to trigger a manual refresh. If the key is correct you'll see your daily spend and budget remaining within a few seconds.
+Tap the tile once to trigger a manual refresh. If the key is correct you'll see your configured dashboard balance or budget remaining and month-to-date spend within a few seconds.
 
 If the tile flashes ⚠:
 - Double-check the key was created with **Admin** role.
@@ -46,17 +47,17 @@ If the tile flashes ⚠:
 | Field | Value |
 |-------|-------|
 | Line 1 | Provider name |
-| Line 2 | Today's spend, e.g. `$0.84 today` |
-| Line 3 | Budget remaining or monthly total, e.g. `$12.40 left` |
+| Line 2 | Configured dashboard balance or budget remaining, e.g. `$12.40 left` |
+| Line 3 | Month-to-date spend, e.g. `$0.10 /mo` |
 
-When no budget is set, line 3 shows your total month-to-date spend instead.
+When neither Budget nor Balance is set, line 2 shows today's spend because OpenAI's public Admin API exposes costs and usage, but not the prepaid credit balance shown in the billing dashboard.
 
 ---
 
 ## Why the balance may differ slightly from the platform
 
-The tile calculates remaining balance as **your configured budget minus the spend reported by the Costs API**, plus a best-effort estimate for today's completion and embedding token usage when that estimate is ahead of the settled cost report. Estimated values are prefixed with `~`.
+When a budget is configured, the tile calculates remaining balance as **your configured budget minus the spend reported by the Costs API**, plus a best-effort estimate for today's completion and embedding token usage when that estimate is ahead of the settled cost report. Estimated values are prefixed with `~`.
 
 OpenAI's Costs API processes usage in batches and can lag behind real-time billing. The Usage API is fresher, but it reports usage counts rather than final invoices, so the plugin avoids double-counting by using the settled cost report as the baseline and only adding the live estimate delta while it is higher.
 
-This is still not a live credit-balance endpoint: unlike DeepSeek (which exposes a live `/user/balance` endpoint), OpenAI does not expose your remaining credit balance directly. Small discrepancies between the tile and the platform dashboard are expected and should close as the Costs API catches up.
+When no budget is configured, the plugin also makes a best-effort credit-balance lookup against OpenAI's billing dashboard endpoint. In current OpenAI behavior this endpoint can return `403` because it requires a browser session key, so the optional Balance field is used as the dependable fallback.

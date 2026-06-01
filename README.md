@@ -8,12 +8,12 @@ Monitor your AI API spending and credit balances directly on your Stream Deck ke
 
 | Provider | What's displayed | Needs |
 |----------|-----------------|-------|
-| **OpenAI** | Daily spend · Monthly spend vs budget · live estimate for recent token usage | Admin API key |
-| **Claude** | Daily spend · Monthly spend vs budget · daily message token count | Admin API key (Team/Enterprise only) |
+| **OpenAI** | Daily spend · Monthly spend · optional budget or manually entered dashboard balance | Admin API key |
+| **Claude** | Daily spend · Monthly spend · optional budget or manually entered dashboard balance | Admin API key (Team/Enterprise only) |
 | **Gemini** | Requests today · Requests this month · or estimated spend when cost/request is set | GCP service account |
 | **DeepSeek** | Remaining credit balance · locally tracked monthly spend · trend | Regular API key |
-| **OpenRouter** | Credits used · Credits remaining · trend | API key from openrouter.ai |
-| **Grok (xAI)** | Credits used · Credits remaining · trend | API key from console.x.ai |
+| **OpenRouter** | Credits remaining · daily/monthly usage when available · trend | API key from openrouter.ai |
+| **Grok (xAI)** | Credits used · optional budget or manually entered dashboard balance · trend | API key from console.x.ai |
 
 Each tile tracks one provider. You can place as many tiles as you like — one per provider, or several showing the same provider at different zoom levels.
 
@@ -57,6 +57,7 @@ npm run build          # compiles + links to Stream Deck automatically
 3. Choose a provider from the **Provider** dropdown.
 4. Paste your API key (or service account path for Gemini) in the relevant section.
 5. Optionally set a monthly budget — the tile will show remaining balance vs that budget.
+6. For OpenAI, Claude, or Grok, optionally paste the dashboard balance when the provider API does not expose it.
 
 ---
 
@@ -64,12 +65,28 @@ npm run build          # compiles + links to Stream Deck automatically
 
 Each provider has different authentication requirements. The links below walk you through the exact steps:
 
-- [OpenAI setup](docs/setup-openai.md) — Admin key required
-- [Claude setup](docs/setup-claude.md) — Admin key required (Team/Enterprise only)
+- [OpenAI setup](docs/setup-openai.md) — Admin key required; balance can be entered manually
+- [Claude setup](docs/setup-claude.md) — Admin key required (Team/Enterprise only); balance can be entered manually
 - [Gemini setup](docs/setup-gemini.md) — GCP service account required *(most involved)*
 - **DeepSeek** — paste a regular API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys); CNY balances use an automatic daily exchange rate or a manual override
-- [OpenRouter setup](docs/setup-openrouter.md) — paste an API key from [openrouter.ai/keys](https://openrouter.ai/keys); credit limit on the key is picked up automatically
-- [Grok (xAI) setup](docs/setup-grok.md) — paste an API key from [console.x.ai](https://console.x.ai); shows total credits used and remaining
+- [OpenRouter setup](docs/setup-openrouter.md) — paste an API key from [openrouter.ai/keys](https://openrouter.ai/keys); account credits are picked up automatically
+- [Grok (xAI) setup](docs/setup-grok.md) — paste an API key from [console.x.ai](https://console.x.ai); balance can be entered manually if xAI omits it
+
+---
+
+## Release packaging
+
+Marketplace builds should be staged from a clean whitelist so local logs and
+runtime state are never shipped:
+
+```bash
+npm run release:stage
+streamdeck pack dist/release/com.nathanaeldousa.ai-api-tracker.sdPlugin
+```
+
+`release:stage` rebuilds the plugin, copies only release files into
+`dist/release`, and fails if local logs, runtime JSON, source maps, external CDN
+references, or raw-response logging are present.
 
 ---
 

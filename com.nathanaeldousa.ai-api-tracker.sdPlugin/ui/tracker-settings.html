@@ -3,8 +3,6 @@
 <head>
   <meta charset="utf-8" />
   <title>AI API Tracker</title>
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
   <script src="sdpi-components.js"></script>
   <style>
     * { box-sizing: border-box; }
@@ -25,11 +23,6 @@
       height: 1px;
       background: #2e2e2e;
     }
-    .heading .bi {
-      font-size: 12px;
-      opacity: 0.75;
-    }
-
     /* Accordion buttons */
     .accordion-btn {
       display: flex;
@@ -167,7 +160,6 @@
   <!-- API Keys and Budgets (global, shared across all tiles) -->
 
   <div class="heading">
-    <i class="bi bi-key-fill"></i>
     API Keys &amp; Budgets
   </div>
 
@@ -188,12 +180,17 @@
         placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
       <div class="note">Monthly budget for remaining-balance display.</div>
     </sdpi-item>
+    <sdpi-item label="Balance ($)">
+      <sdpi-textfield setting="openaiCreditBalance" global
+        placeholder="e.g. 4.50" type="number" min="0" step="any"></sdpi-textfield>
+      <div class="note">Optional dashboard balance. Used only when Budget is blank.</div>
+    </sdpi-item>
     <div class="callout">
       Requires an <strong>Admin key</strong>. Create one at
       <strong>platform.openai.com/organization/api-keys</strong>
       (Role: Admin). A regular project key (sk-proj-...) will return a 403 error.
-      Recent completion and embedding usage is estimated from token counts until
-      OpenAI's cost report catches up.
+      OpenAI does not expose credit balance through Admin API keys, so paste
+      the dashboard balance above if you want the tile to show it.
     </div>
   </div>
 
@@ -213,11 +210,16 @@
       <sdpi-textfield setting="claudeMonthlyBudget" global
         placeholder="e.g. 50" type="number" min="0" step="1"></sdpi-textfield>
     </sdpi-item>
+    <sdpi-item label="Balance ($)">
+      <sdpi-textfield setting="claudeCreditBalance" global
+        placeholder="e.g. 0.86" type="number" min="0" step="any"></sdpi-textfield>
+      <div class="note">Optional dashboard balance. Used only when Budget is blank.</div>
+    </sdpi-item>
     <div class="callout">
       Requires an <strong>Admin key</strong> (sk-ant-admin...) from
       <strong>console.anthropic.com &gt; Settings &gt; Admin keys</strong>.
-      Only available on <strong>Team / Enterprise</strong> plans. Standard
-      accounts will see "Team plan only" on the tile.
+      Anthropic's Admin API exposes cost and usage, but not prepaid credit
+      balance, so paste the dashboard balance above if you want the tile to show it.
     </div>
   </div>
 
@@ -324,10 +326,15 @@
         placeholder="e.g. 20" type="number" min="0" step="1"></sdpi-textfield>
       <div class="note">Only needed if your key has no hard credit limit.</div>
     </sdpi-item>
+    <sdpi-item label="Balance ($)">
+      <sdpi-textfield setting="grokCreditBalance" global
+        placeholder="e.g. 10" type="number" min="0" step="any"></sdpi-textfield>
+      <div class="note">Optional dashboard balance. Used when xAI does not return remaining credit.</div>
+    </sdpi-item>
     <div class="callout">
       Get your API key at <strong>console.x.ai</strong>. Shows total credits
-      used and remaining. If the endpoint returns unexpected data, check the
-      plugin logs — the raw response is logged on first fetch.
+      used and remaining when xAI returns those fields. If remaining credit is
+      missing, enter the dashboard balance above.
     </div>
   </div>
 
@@ -336,7 +343,6 @@
   <!-- Settings -->
 
   <div class="heading">
-    <i class="bi bi-gear-fill"></i>
     Settings
   </div>
 
@@ -355,7 +361,6 @@
   <!-- Quick reference -->
 
   <div class="heading">
-    <i class="bi bi-info-circle"></i>
     Quick Reference
   </div>
 
@@ -395,6 +400,14 @@
     }
 
     document.addEventListener('DOMContentLoaded', function () {
+      var providerSave = null;
+      if (window.SDPIComponents && window.SDPIComponents.useSettings) {
+        var providerSettings = window.SDPIComponents.useSettings('provider', function (value) {
+          if (value) openForProvider(value);
+        }, 0);
+        providerSave = providerSettings && providerSettings[1];
+      }
+
       // Wait for sdpi-components to populate the select value from settings
       setTimeout(function () {
         var sel = document.getElementById('provider-select');
@@ -402,13 +415,17 @@
       }, 200);
 
       // Follow provider dropdown changes
-      document.addEventListener('change', function (e) {
-        var el = e.target;
-        while (el && el.id !== 'provider-select') el = el.parentElement;
-        if (!el) return;
-        var val = document.getElementById('provider-select').value;
+      var providerSelect = document.getElementById('provider-select');
+      function handleProviderChange() {
+        var val = providerSelect && providerSelect.value;
+        if (!val) return;
+        if (providerSave) providerSave(val);
         if (val) openForProvider(val);
-      });
+      }
+      if (providerSelect) {
+        providerSelect.addEventListener('valuechange', handleProviderChange);
+        providerSelect.addEventListener('change', handleProviderChange);
+      }
     });
   </script>
 

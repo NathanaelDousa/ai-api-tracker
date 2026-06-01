@@ -6,7 +6,7 @@
 
 AI API Tracker is a Stream Deck plugin that displays your remaining balance or
 monthly usage for AI provider APIs (OpenAI, Anthropic Claude, Google Gemini,
-and DeepSeek) directly on your Stream Deck keys.
+DeepSeek, OpenRouter, and xAI Grok) directly on your Stream Deck keys.
 
 ## Data Collected
 
@@ -20,11 +20,18 @@ Your API keys are entered in the Stream Deck property inspector and stored
 never sent anywhere except directly to the respective AI provider's official
 API endpoint to retrieve your own usage or balance information.
 
+Optional dashboard balance fields for OpenAI, Claude, and Grok are also stored
+locally by Stream Deck. They are only used for display on your tile.
+
 ### Usage Data
 
-Balance and usage figures are fetched in real time from each provider's API
-and displayed on your Stream Deck. This data is never stored persistently or
-shared.
+Balance and usage figures are fetched from provider APIs and displayed on your
+Stream Deck. The plugin developer does not receive this data.
+
+The plugin stores a small local trend/spend file for providers that need local
+history, such as DeepSeek balance deltas and today-vs-yesterday trend lines.
+These files stay on your device and are excluded from Marketplace release
+packages.
 
 ### Exchange Rates
 
@@ -41,7 +48,15 @@ in this request.
 | Anthropic API | Fetch usage data | https://www.anthropic.com/privacy |
 | Google Gemini API | Fetch usage data | https://policies.google.com/privacy |
 | DeepSeek API | Fetch balance | https://www.deepseek.com/privacy |
+| OpenRouter API | Fetch credits and usage | https://openrouter.ai/privacy |
+| xAI API | Fetch API key usage | https://x.ai/legal/privacy-policy |
 | frankfurter.app | CNY→USD rate | https://www.frankfurter.app |
+
+## Logging
+
+The plugin writes local diagnostic logs through Stream Deck. Logs are intended
+for troubleshooting only and avoid raw provider responses. Local logs are not
+included in release packages.
 
 ## Contact
 

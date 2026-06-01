@@ -1,6 +1,6 @@
 import streamDeck from "@elgato/streamdeck";
 import type { UsageData, FetchError, GlobalSettings } from "./types";
-import { providerBudget } from "./budget";
+import { configuredBalance, providerBudget } from "./budget";
 import { normalizeSecret } from "./keyUtils";
 import { recordAndGetTrend } from "./trendStore";
 
@@ -27,6 +27,7 @@ interface GrokKeyResponse {
 export async function fetchGrokUsage(gs: GlobalSettings): Promise<UsageData> {
   const apiKey = normalizeSecret(gs.grokApiKey);
   const budget = providerBudget(gs, "grokMonthlyBudget");
+  const dashboardBalance = configuredBalance(gs, "grokCreditBalance");
 
   if (!apiKey) {
     throw { kind: "no-api-key" } satisfies FetchError;
@@ -52,14 +53,11 @@ export async function fetchGrokUsage(gs: GlobalSettings): Promise<UsageData> {
     if (response.status === 429) {
       throw { kind: "rate-limited" } satisfies FetchError;
     }
-    // Log the body so we can see what xAI actually returns if it's not what we expect.
-    const body = await response.text().catch(() => "");
-    streamDeck.logger.warn(`[Grok] /v1/api-key ${response.status}: ${body.slice(0, 200)}`);
+    streamDeck.logger.warn(`[Grok] /v1/api-key returned HTTP ${response.status}`);
     throw { kind: "api-error", status: response.status } satisfies FetchError;
   }
 
   const raw = await response.json() as GrokKeyResponse;
-  streamDeck.logger.info(`[Grok] raw response: ${JSON.stringify(raw).slice(0, 200)}`);
 
   // Normalise — flatten nested .data if present.
   const payload = raw.data ?? raw;
@@ -70,7 +68,9 @@ export async function fetchGrokUsage(gs: GlobalSettings): Promise<UsageData> {
   const total     = apiLimit != null ? apiLimit : budget;
   const remaining = apiLeft  != null ? apiLeft
     : apiLimit               != null ? Math.max(0, apiLimit - usage)
+    : dashboardBalance       != null ? dashboardBalance
     : Math.max(0, budget - usage);
+  const hasBalance = apiLeft != null || dashboardBalance != null;
 
   streamDeck.logger.info(
     `[Grok] usage=$${usage.toFixed(4)} limit=${apiLimit ?? "none"} remaining=$${remaining.toFixed(4)}`,
@@ -78,11 +78,14 @@ export async function fetchGrokUsage(gs: GlobalSettings): Promise<UsageData> {
 
   const trend = recordAndGetTrend("grok:usd", usage);
 
-  // Grok has no daily breakdown — show total spend as the primary cost figure.
+  // Grok has no daily/monthly breakdown here; usage is total key spend.
   return {
     dailyTokens:     0,
-    dailyCost:       round2(usage),
-    monthlyCost:     total > 0 ? round2(usage) : undefined,
+    dailyCost:       0,
+    dailyCostUnavailable: true,
+    monthlyCost:     round2(usage),
+    spendPeriod:     "total",
+    balanceRemaining: budget > 0 || apiLimit != null || !hasBalance ? undefined : round2(remaining),
     trend,
     budgetTotal:     total,
     budgetRemaining: round2(remaining),

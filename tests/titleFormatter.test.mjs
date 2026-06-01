@@ -11,7 +11,7 @@ const {
   resolveOpenAIEmbeddingPrice,
   resolveOpenAITextPrice,
 } = await importTs("../src/services/openaiEstimator.ts");
-const { providerBudget } = await importTs("../src/services/budget.ts");
+const { configuredBalance, providerBudget } = await importTs("../src/services/budget.ts");
 const { isClaudeAdminKey, normalizeSecret } = await importTs("../src/services/keyUtils.ts");
 const now = Date.UTC(2026, 4, 30, 12, 0, 0);
 const lastUpdated = now - 2 * 60 * 1000;
@@ -45,6 +45,33 @@ test("marks estimated USD values with a tilde", () => {
   assert.equal(title, "OpenAI\n~$37.39 left\n~$12.61 /mo\n↑~$0.05 · 2m");
 });
 
+test("renders OpenAI platform balance with month spend when no manual budget is set", () => {
+  const title = formatUsageTitle("OpenAI", {
+    dailyTokens:     151416,
+    dailyCost:       0.104,
+    monthlyCost:     0.104,
+    balanceRemaining: 0.86,
+    budgetTotal:     0,
+    budgetRemaining: 0,
+    lastUpdated,
+  }, { now });
+
+  assert.equal(title, "OpenAI\n$0.86 left\n$0.10 /mo\n2m ago");
+});
+
+test("standard mode shows today's spend when no balance or budget is available", () => {
+  const title = formatUsageTitle("OpenAI", {
+    dailyTokens:     151416,
+    dailyCost:       0.104,
+    monthlyCost:     0.104,
+    budgetTotal:     0,
+    budgetRemaining: 0,
+    lastUpdated,
+  }, { now });
+
+  assert.equal(title, "OpenAI\n$0.10 today\n$0.10 /mo\n2m ago");
+});
+
 test("renders request-count trend for Gemini-style request units", () => {
   const title = formatUsageTitle("Gemini", {
     dailyTokens:     340,
@@ -56,7 +83,7 @@ test("renders request-count trend for Gemini-style request units", () => {
     unit:            "requests",
   }, { now });
 
-  assert.equal(title, "Gemini\n340 req today\n↑200 req · 2m");
+  assert.equal(title, "Gemini\n340 req today\n0 /mo\n↑200 req · 2m");
 });
 
 test("hides trend line when display settings disable it", () => {
@@ -70,7 +97,7 @@ test("hides trend line when display settings disable it", () => {
     unit:            "requests",
   }, { now, showTrend: false });
 
-  assert.equal(title, "Gemini\n340 req today\n2m ago");
+  assert.equal(title, "Gemini\n340 req today\n0 /mo\n2m ago");
 });
 
 test("focus modes keep the large single-number display", () => {
@@ -87,19 +114,70 @@ test("focus modes keep the large single-number display", () => {
   assert.equal(title, "Gemini\n340 req");
 });
 
+test("today focus renders zero daily spend instead of falling back to monthly spend", () => {
+  const title = formatUsageTitle("Claude", {
+    dailyTokens:     0,
+    dailyCost:       0,
+    monthlyCost:     14.34,
+    budgetTotal:     0,
+    budgetRemaining: 0,
+    lastUpdated,
+  }, { now, displayMode: "big-daily" });
+
+  assert.equal(title, "Claude\n$0.00 today");
+});
+
+test("total-only provider usage is labeled as used, not monthly spend", () => {
+  const title = formatUsageTitle("OpenRouter", {
+    dailyTokens:     0,
+    dailyCost:       0,
+    dailyCostUnavailable: true,
+    monthlyCost:     5,
+    spendPeriod:     "total",
+    budgetTotal:     20,
+    budgetRemaining: 15,
+    lastUpdated,
+  }, { now });
+
+  assert.equal(title, "OpenRo…\n$15.00 left\n$5.00 used\n2m ago");
+});
+
+test("today focus shows zero when provider has no daily spend endpoint", () => {
+  const title = formatUsageTitle("Grok", {
+    dailyTokens:     0,
+    dailyCost:       0,
+    dailyCostUnavailable: true,
+    monthlyCost:     4,
+    spendPeriod:     "total",
+    budgetTotal:     10,
+    budgetRemaining: 6,
+    lastUpdated,
+  }, { now, displayMode: "big-daily" });
+
+  assert.equal(title, "Grok\n$0.00 today");
+});
+
 test("property inspector exposes current settings and providers", async () => {
   const html = await readFile(new URL("../com.nathanaeldousa.ai-api-tracker.sdPlugin/ui/tracker-settings.html", import.meta.url), "utf8");
+
+  assert.doesNotMatch(html, /cdn\.jsdelivr|bootstrap-icons|<link\b[^>]+href=["']https?:\/\//i);
+  assert.doesNotMatch(html, /raw response/i);
 
   // Tile display settings
   assert.match(html, /<sdpi-item label="Trend line">/);
   assert.match(html, /<sdpi-select setting="showTrend">/);
   assert.match(html, /<option value="yes">Show<\/option>/);
   assert.match(html, /<option value="no">Hide<\/option>/);
+  assert.match(html, /useSettings\('provider'/);
+  assert.match(html, /addEventListener\('valuechange', handleProviderChange\)/);
 
   // Gemini uses text path field (file picker was removed — sandboxed webview blocks file reads)
   assert.match(html, /setting="geminiServiceAccountPath"/);
   assert.doesNotMatch(html, /id="gemini-service-account-file"/);
   assert.match(html, /setting="geminiMonthlyBudget"/);
+  assert.match(html, /setting="openaiCreditBalance"/);
+  assert.match(html, /setting="claudeCreditBalance"/);
+  assert.match(html, /setting="grokCreditBalance"/);
 
   // DeepSeek manual exchange rate
   assert.match(html, /setting="deepseekCnyToUsdRate"/);
@@ -109,6 +187,21 @@ test("property inspector exposes current settings and providers", async () => {
   assert.match(html, /setting="openrouterApiKey"/);
   assert.match(html, /value="grok"/);
   assert.match(html, /setting="grokApiKey"/);
+});
+
+test("release hygiene guards exclude local state and raw provider logging", async () => {
+  const [ignore, grokService, releaseScript] = await Promise.all([
+    readFile(new URL("../com.nathanaeldousa.ai-api-tracker.sdPlugin/.sdignore", import.meta.url), "utf8"),
+    readFile(new URL("../src/services/grokService.ts", import.meta.url), "utf8"),
+    readFile(new URL("../scripts/prepare-release.js", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(ignore, /logs\/\*\*/);
+  assert.match(ignore, /deepseek-spend\.json/);
+  assert.match(ignore, /trend-store\.json/);
+  assert.doesNotMatch(grokService, /raw response/);
+  assert.match(releaseScript, /forbiddenPathPatterns/);
+  assert.match(releaseScript, /streamdeck pack/);
 });
 
 test("normalizes pasted provider secrets before prefix checks", () => {
@@ -126,6 +219,12 @@ test("provider budgets do not fall back to legacy shared monthlyBudget", () => {
     monthlyBudget:         2,
     deepseekMonthlyBudget: 2,
   }, "deepseekMonthlyBudget"), 2);
+});
+
+test("configured balances accept explicit zero but ignore blank values", () => {
+  assert.equal(configuredBalance({ openaiCreditBalance: "4.50" }, "openaiCreditBalance"), 4.5);
+  assert.equal(configuredBalance({ openaiCreditBalance: 0 }, "openaiCreditBalance"), 0);
+  assert.equal(configuredBalance({ openaiCreditBalance: "" }, "openaiCreditBalance"), null);
 });
 
 test("estimates OpenAI completion spend using cached-token pricing", () => {

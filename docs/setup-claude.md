@@ -35,12 +35,13 @@ Go to **[console.anthropic.com](https://console.anthropic.com)** and confirm you
 2. Scroll to the **Claude (Anthropic)** section in the property inspector.
 3. Paste the `sk-ant-admin…` key into the **API Key** field.
 4. *(Optional)* Enter a **Budget ($)** for monthly tracking.
+5. *(Optional)* Enter **Balance ($)** from the Claude billing dashboard. Anthropic's Admin API exposes usage and cost reports, but not prepaid credit balance, so this field is the reliable way to show dashboard balance when Budget is blank.
 
 ---
 
 ## Step 4 — Verify it works
 
-Tap the tile to trigger a refresh. You should see today's spend and budget remaining within a few seconds.
+Tap the tile to trigger a refresh. You should see today's spend, month-to-date spend, and either budget remaining or your configured dashboard balance within a few seconds.
 
 If the tile flashes ⚠ after using an `sk-ant-admin…` key:
 - Confirm the key has not been revoked in the console.
@@ -53,9 +54,9 @@ If the tile flashes ⚠ after using an `sk-ant-admin…` key:
 | Field | Value |
 |-------|-------|
 | Line 1 | Provider name |
-| Line 2 | Today's spend, e.g. `$2.10 today` |
-| Line 3 | Budget remaining or monthly total |
+| Line 2 | Dashboard balance or budget remaining, or today's spend when neither is set |
+| Line 3 | Month-to-date spend, e.g. `$0.86 /mo` |
 
-When no budget is set, line 3 shows your total month-to-date spend.
+When neither Budget nor Balance is set, line 2 shows today's spend. Line 3 always shows month-to-date spend.
 
 The spend total comes from Anthropic's cost report. The token count is read from the usage report and is mainly used for diagnostics and future display modes.
