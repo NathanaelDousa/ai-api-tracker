@@ -44,11 +44,17 @@ export function formatUsageTitle(name: string, d: UsageData, options: TitleForma
   }
 
   if (d.budgetTotal === 0) {
+    // No budget configured — show spend, not budget remaining.
     if (d.monthlyCost != null) {
-      return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today\n${estimatePrefix}${dollar(d.monthlyCost)} /mo\n${lastLine}`;
+      const monthLine = `${estimatePrefix}${dollar(d.monthlyCost)} /mo`;
+      // Only add a "today" sub-line when it's a useful extra (different from monthly).
+      const todayUseful = d.dailyCost > 0.001 && Math.abs(d.dailyCost - d.monthlyCost) > 0.001;
+      return todayUseful
+        ? `${short}\n${monthLine}\n${estimatePrefix}${dollar(d.dailyCost)} today\n${lastLine}`
+        : `${short}\n${monthLine}\n${lastLine}`;
     }
-    if (d.dailyCost === 0) return `${short}\n$0 today\n${lastLine}`;
-    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} today\n${lastLine}`;
+    if (d.dailyCost === 0) return `${short}\n$0.00 spent\n${lastLine}`;
+    return `${short}\n${estimatePrefix}${dollar(d.dailyCost)} spent\n${lastLine}`;
   }
 
   if (d.monthlyCost != null) {

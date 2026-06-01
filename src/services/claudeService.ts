@@ -116,6 +116,7 @@ async function fetchCostReport(
       `&limit=31` +
       (pageToken ? `&page=${encodeURIComponent(pageToken)}` : "");
 
+    streamDeck.logger.info(`[Claude] fetching: ${url}`);
     const page = await fetchPage(apiKey, url);
 
     for (const bucket of page.data) {
@@ -215,6 +216,8 @@ async function fetchPage(apiKey: string, url: string): Promise<CostReportRespons
       const ra = parseInt(response.headers.get("retry-after") ?? "", 10);
       throw { kind: "rate-limited", retryAfter: Number.isNaN(ra) ? undefined : ra } satisfies FetchError;
     }
+    const body = await response.text().catch(() => "");
+    streamDeck.logger.error(`[Claude] HTTP ${response.status}: ${body.slice(0, 300)}`);
     throw { kind: "api-error", status: response.status } satisfies FetchError;
   }
 
