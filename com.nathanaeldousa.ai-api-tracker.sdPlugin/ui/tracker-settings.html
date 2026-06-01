@@ -191,6 +191,10 @@
       (Role: Admin). A regular project key (sk-proj-...) will return a 403 error.
       OpenAI does not expose credit balance through Admin API keys, so paste
       the dashboard balance above if you want the tile to show it.
+      <br><br>
+      <strong>What the tile shows:</strong> settled cost updates within ~24 h;
+      today's spend includes a live estimate from token counts until the cost
+      report catches up.
     </div>
   </div>
 
@@ -218,8 +222,12 @@
     <div class="callout">
       Requires an <strong>Admin key</strong> (sk-ant-admin...) from
       <strong>console.anthropic.com &gt; Settings &gt; Admin keys</strong>.
+      Only available on <strong>Team / Enterprise</strong> plans.
       Anthropic's Admin API exposes cost and usage, but not prepaid credit
       balance, so paste the dashboard balance above if you want the tile to show it.
+      <br><br>
+      <strong>What the tile shows:</strong> cost report data; balance requires
+      manual entry.
     </div>
   </div>
 
@@ -256,8 +264,10 @@
       GCP Console &gt; IAM &gt; Service Accounts &gt; Create &gt;
       grant <strong>Monitoring Viewer</strong> &gt; Keys &gt; Add Key &gt; JSON.
       Enable the <strong>Cloud Monitoring API</strong> on your project.
-      By default shows <strong>successful request count</strong>. Set
-      Cost/request above to convert to an estimated spend.
+      <br><br>
+      <strong>What the tile shows:</strong> successful request count by default.
+      Set Cost/request above to convert to an estimated spend. No prepaid
+      balance concept — request counts and estimates only.
     </div>
   </div>
 
@@ -271,7 +281,7 @@
   <div class="accordion-body" id="section-deepseek">
     <sdpi-item label="API Key">
       <sdpi-password setting="deepseekApiKey" global placeholder="sk-..."></sdpi-password>
-      <div class="note">Shows remaining credit balance. CNY is auto-converted to USD.</div>
+      <div class="note">Stored locally, only sent to api.deepseek.com. Balance and monthly spend are automatic — no manual entry needed.</div>
     </sdpi-item>
     <sdpi-item label="Budget ($)">
       <sdpi-textfield setting="deepseekMonthlyBudget" global

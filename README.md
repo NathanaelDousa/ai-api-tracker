@@ -68,7 +68,7 @@ Each provider has different authentication requirements. The links below walk yo
 - [OpenAI setup](docs/setup-openai.md) — Admin key required; balance can be entered manually
 - [Claude setup](docs/setup-claude.md) — Admin key required (Team/Enterprise only); balance can be entered manually
 - [Gemini setup](docs/setup-gemini.md) — GCP service account required *(most involved)*
-- **DeepSeek** — paste a regular API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys); CNY balances use an automatic daily exchange rate or a manual override
+- [DeepSeek setup](docs/setup-deepseek.md) — paste a regular API key; balance and monthly spend tracked automatically; CNY auto-converted to USD
 - [OpenRouter setup](docs/setup-openrouter.md) — paste an API key from [openrouter.ai/keys](https://openrouter.ai/keys); account credits are picked up automatically
 - [Grok (xAI) setup](docs/setup-grok.md) — paste an API key from [console.x.ai](https://console.x.ai); balance can be entered manually if xAI omits it
 
