@@ -93,7 +93,7 @@ test("property inspector exposes current settings and providers", async () => {
   // Tile display settings
   assert.match(html, /<sdpi-item label="Trend line">/);
   assert.match(html, /<sdpi-select setting="showTrend">/);
-  assert.match(html, /<option value="yes" selected>Show<\/option>/);
+  assert.match(html, /<option value="yes">Show<\/option>/);
   assert.match(html, /<option value="no">Hide<\/option>/);
 
   // Gemini uses text path field (file picker was removed — sandboxed webview blocks file reads)

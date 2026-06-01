@@ -81,8 +81,12 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
 
   const now     = new Date();
   const startTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000);
-  const endTs   = Math.floor(now.getTime() / 1000);
+  const nowTs   = Math.floor(now.getTime() / 1000);
   const todayTs = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000);
+  // Costs API validates at day granularity — start and end must be on different
+  // calendar dates. On the first of the month startTs == todayTs (same day),
+  // so we extend endTs to tomorrow midnight to guarantee start < end date-wise.
+  const endTs   = Math.max(nowTs, startTs + 86400);
 
   const allBuckets: CostBucket[] = [];
   let pageToken: string | null = null;
@@ -127,7 +131,7 @@ export async function fetchOpenAIUsage(gs: GlobalSettings): Promise<UsageData> {
     `[OpenAI] settledMonthlyCost=$${settledMonthlyCost.toFixed(4)} settledDailyCost=$${settledDailyCost.toFixed(4)} budget=$${budget}`,
   );
 
-  const liveEstimate = await fetchLiveUsageEstimateSafely(apiKey, todayTs, endTs);
+  const liveEstimate = await fetchLiveUsageEstimateSafely(apiKey, todayTs, nowTs);
   const overlay = overlayLiveEstimateOnSettledCosts(
     settledDailyCost,
     settledMonthlyCost,

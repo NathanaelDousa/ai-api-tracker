@@ -217,7 +217,7 @@ export class ApiTrackerAction extends SingletonAction<ActionSettings> {
 
   override async onDidReceiveSettings(ev: DidReceiveSettingsEvent<ActionSettings>): Promise<void> {
     try {
-      LOG("onDidReceiveSettings START");
+      LOG(`onDidReceiveSettings provider=${ev.payload.settings.provider} display=${ev.payload.settings.displayMode} trend=${ev.payload.settings.showTrend}`);
       const { action } = ev;
       const tile = this.getOrCreateTile(action.id);
 
