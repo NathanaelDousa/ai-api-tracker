@@ -70,10 +70,12 @@ export async function fetchOpenRouterUsage(gs: GlobalSettings): Promise<UsageDat
 
   const trend = recordAndGetTrend("openrouter:usd", usage);
 
+  // OpenRouter has no daily breakdown — show total spend as the primary cost
+  // figure so the tile reads "X.XX used" rather than "$0.00 today / $X.XX /mo".
   return {
     dailyTokens:     0,
-    dailyCost:       0,
-    monthlyCost:     round2(usage),
+    dailyCost:       round2(usage),
+    monthlyCost:     total > 0 ? round2(usage) : undefined,
     trend,
     budgetTotal:     total,
     budgetRemaining: round2(remaining),

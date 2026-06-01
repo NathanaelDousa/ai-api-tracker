@@ -78,10 +78,11 @@ export async function fetchGrokUsage(gs: GlobalSettings): Promise<UsageData> {
 
   const trend = recordAndGetTrend("grok:usd", usage);
 
+  // Grok has no daily breakdown — show total spend as the primary cost figure.
   return {
     dailyTokens:     0,
-    dailyCost:       0,
-    monthlyCost:     round2(usage),
+    dailyCost:       round2(usage),
+    monthlyCost:     total > 0 ? round2(usage) : undefined,
     trend,
     budgetTotal:     total,
     budgetRemaining: round2(remaining),

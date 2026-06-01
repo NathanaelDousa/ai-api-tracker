@@ -68,8 +68,12 @@ export async function fetchClaudeUsage(gs: GlobalSettings): Promise<UsageData> {
   }
 
   const now        = new Date();
-  const startingAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
-  const endingAt   = now.toISOString();
+  const startOfMonth = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
+  const startingAt   = new Date(startOfMonth).toISOString();
+  // Cost report validates at day granularity — ensure end is on a different
+  // calendar date from start (same fix as OpenAI costs endpoint).
+  const endMs      = Math.max(now.getTime(), startOfMonth + 86_400_000);
+  const endingAt   = new Date(endMs).toISOString();
   const todayStr   = now.toISOString().slice(0, 10);
 
   const costReport = await fetchCostReport(apiKey, startingAt, endingAt, todayStr);
