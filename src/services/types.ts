@@ -50,6 +50,8 @@ export type FetchError =
   | { kind: "network-error"; message: string }
   | { kind: "api-error"; status: number }
   | { kind: "coming-soon" }
+  /** Thrown by providers that have a valid API key but no public billing endpoint.
+   *  Reserved for future providers — nothing currently throws this. */
   | { kind: "billing-unavailable" }
   | { kind: "unknown-error"; message: string };
 
@@ -90,7 +92,6 @@ export interface ProviderConfig {
 export type GlobalSettings = Record<string, unknown> & {
   openaiApiKey?: string;
   claudeApiKey?: string;
-  geminiApiKey?: string;
   /** Imported service account JSON from the property inspector file picker.
    *  Kept locally in Stream Deck global settings, like provider API keys. */
   geminiServiceAccountJson?: string;

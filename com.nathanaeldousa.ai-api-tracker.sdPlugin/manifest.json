@@ -4,7 +4,7 @@
   "Name": "AI API Tracker",
   "Version": "1.0.0.0",
   "Author": "Nathanael Dousa",
-  "Description": "Monitor AI API usage and balances from OpenAI, Claude, Gemini, and DeepSeek directly on your Stream Deck.",
+  "Description": "Monitor AI API usage and credit balances from OpenAI, Claude, Gemini, DeepSeek, OpenRouter, and Grok (xAI) directly on your Stream Deck.",
   "URL": "https://github.com/nathanaeldousa/ai-api-tracker",
   "Icon": "imgs/plugin-icon",
   "Category": "AI API Tracker",

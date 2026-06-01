@@ -8,11 +8,19 @@
  */
 
 import { execSync } from "child_process";
-import { existsSync, mkdirSync, renameSync } from "fs";
+import { existsSync, mkdirSync, renameSync, readFileSync } from "fs";
 import { join, basename, dirname } from "path";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
+
+/** Returns true only if the file starts with an SVG tag (not a 404 page etc.) */
+function isSvg(filePath) {
+  try {
+    const head = readFileSync(filePath, "utf8").trimStart().slice(0, 200);
+    return head.startsWith("<svg") || head.startsWith("<?xml") || head.includes("<svg");
+  } catch { return false; }
+}
 
 const root      = join(dirname(fileURLToPath(import.meta.url)), "..");
 const pluginId  = "com.nathanaeldousa.ai-api-tracker";
@@ -28,8 +36,8 @@ const icons = [
   { icns: "claude.icns",     svg: null,              fallback: "claude-logo.png",   out: "claude.png"    },
   { icns: "Gemini.icns",     svg: null,              fallback: "gemini-google.png", out: "gemini.png"    },
   { icns: "deepseek.icns",   svg: null,              fallback: "deepseek-logo.png", out: "deepseek.png"  },
-  { icns: "openrouter.icns", svg: "openrouter.svg",  fallback: "fallback.png",      out: "openrouter.png"},
-  { icns: "grok.icns",       svg: "grok-color.svg",  fallback: "fallback.png",      out: "grok.png"      },
+  { icns: "openrouter.icns", svg: null, fallback: "openrouter.png", out: "openrouter.png" },
+  { icns: "grok.icns",       svg: null, fallback: "grok.png",       out: "grok.png"       },
 ];
 
 const isMac = process.platform === "darwin";
@@ -44,7 +52,7 @@ if (isMac) {
     if (existsSync(icnsPath)) {
       // .icns → PNG via sips
       execSync(`sips -s format png -z 144 144 "${icnsPath}" --out "${dst}"`, { stdio: "inherit" });
-    } else if (svgPath && existsSync(svgPath)) {
+    } else if (svgPath && existsSync(svgPath) && isSvg(svgPath)) {
       // .svg → PNG via qlmanage (QuickLook, ships with every Mac)
       const tmp = mkdtempSync(join(tmpdir(), "sdicon-"));
       try {
@@ -57,6 +65,9 @@ if (isMac) {
         rmSync(tmp, { recursive: true, force: true });
       }
     } else {
+      if (svgPath && existsSync(svgPath) && !isSvg(svgPath)) {
+        console.warn(`⚠  ${svg} is not a valid SVG file — using fallback`);
+      }
       // .png fallback via sips
       execSync(`sips -s format png -z 144 144 "${pngPath}" --out "${dst}"`, { stdio: "inherit" });
     }

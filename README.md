@@ -68,8 +68,8 @@ Each provider has different authentication requirements. The links below walk yo
 - [Claude setup](docs/setup-claude.md) — Admin key required (Team/Enterprise only)
 - [Gemini setup](docs/setup-gemini.md) — GCP service account required *(most involved)*
 - **DeepSeek** — paste a regular API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys); CNY balances use an automatic daily exchange rate or a manual override
-- **OpenRouter** — paste an API key from [openrouter.ai/keys](https://openrouter.ai/keys); if your key has a hard credit limit set, the tile picks it up automatically
-- **Grok (xAI)** — paste an API key from [console.x.ai](https://console.x.ai); shows total credits used and remaining
+- [OpenRouter setup](docs/setup-openrouter.md) — paste an API key from [openrouter.ai/keys](https://openrouter.ai/keys); credit limit on the key is picked up automatically
+- [Grok (xAI) setup](docs/setup-grok.md) — paste an API key from [console.x.ai](https://console.x.ai); shows total credits used and remaining
 
 ---
 
