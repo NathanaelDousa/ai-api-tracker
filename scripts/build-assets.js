@@ -28,7 +28,19 @@ const outDir    = join(root, `${pluginId}.sdPlugin/imgs/providers`);
 mkdirSync(outDir, { recursive: true });
 
 // The app icon PNG lives inside the macOS icon bundle.
-const APP_ICON = "app-icon.icon/Assets/app-icon.png";
+const APP_ICON     = "app-icon.icon/Assets/app-icon.png";
+const appIconPath  = join(root, "src/assets", APP_ICON);
+const imgsDir      = join(root, `${pluginId}.sdPlugin/imgs`);
+
+// Regenerate the plugin-level icons from the app icon on every build.
+if (process.platform === "darwin") {
+  for (const [size, name] of [[128, "plugin-icon"], [256, "plugin-icon@2x"],
+                               [128, "category-icon"], [256, "category-icon@2x"]]) {
+    execSync(`sips -s format png -z ${size} ${size} "${appIconPath}" --out "${join(imgsDir, name + ".png")}"`,
+      { stdio: "pipe" });
+  }
+  console.log("Plugin icons updated from app-icon.");
+}
 
 /**
  * Provider icon definitions.
